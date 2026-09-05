@@ -48,7 +48,7 @@ define('APP_DEBUG', APP_ENV === 'development');
 // directement depuis un navigateur. A completer avec le(s) domaine(s) ou
 // sont hebergees index.html / dashboard / store une fois deployees.
 $ALLOWED_ORIGINS = [
-    // 'https://myboutik.exemple.com',
+    'https://romariosia07-lab.github.io',
 ];
 $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (in_array($requestOrigin, $ALLOWED_ORIGINS, true)) {
