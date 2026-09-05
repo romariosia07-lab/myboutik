@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MYBOUTIK — Vendez en ligne, simplement</title>
+<style>
+  :root{
+    --blue:#2563eb; --blue-dark:#1d4ed8; --ink:#0f172a; --gray:#64748b;
+    --border:#e2e8f0; --bg:#f8fafc; --green:#16a34a; --green-bg:#ecfdf5;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:var(--ink);background:#fff;line-height:1.5}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--border)}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px}
+  .logo .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#3b82f6,#1e40af);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+  nav{display:flex;gap:10px;align-items:center}
+  .btn{border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;transition:.15s}
+  .btn-primary{background:var(--blue);color:#fff}
+  .btn-primary:hover{background:var(--blue-dark)}
+  .btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--border)}
+  .btn-ghost:hover{background:var(--bg)}
+  .btn-block{width:100%}
+  .hero{text-align:center;padding:80px 24px 60px}
+  .badge{display:inline-block;background:#eff6ff;color:var(--blue);font-size:13px;font-weight:600;padding:6px 14px;border-radius:999px;margin-bottom:20px}
+  .hero h1{font-size:44px;font-weight:800;letter-spacing:-1px;max-width:760px;margin:0 auto 18px}
+  .hero h1 span{color:var(--blue)}
+  .hero p{color:var(--gray);font-size:18px;max-width:600px;margin:0 auto 32px}
+  .hero-ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;padding:40px 0 80px}
+  .card{border:1px solid var(--border);border-radius:16px;padding:24px;background:#fff}
+  .card .ic{width:44px;height:44px;border-radius:12px;background:#eff6ff;color:var(--blue);display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:14px}
+  .card h3{font-size:16px;margin-bottom:6px}
+  .card p{color:var(--gray);font-size:14px}
+  footer{border-top:1px solid var(--border);padding:24px;text-align:center;color:var(--gray);font-size:13px}
+
+  .overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .overlay.open{display:flex}
+  .modal{background:#fff;border-radius:18px;max-width:400px;width:100%;padding:32px;position:relative}
+  .modal .close{position:absolute;top:14px;right:16px;border:none;background:none;font-size:20px;cursor:pointer;color:var(--gray)}
+  .modal h2{font-size:22px;margin-bottom:6px}
+  .modal .sub{color:var(--gray);font-size:14px;margin-bottom:22px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  .field input{width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px}
+  .field input:focus{outline:2px solid var(--blue);border-color:transparent}
+  .msg{font-size:13px;border-radius:10px;padding:10px 12px;margin-bottom:14px}
+  .msg.error{background:#fef2f2;color:#b91c1c}
+  .msg.success{background:var(--green-bg);color:#15803d}
+  .switch{text-align:center;font-size:13px;color:var(--gray);margin-top:16px}
+  .switch a{color:var(--blue);font-weight:600;cursor:pointer}
+  .verify-box{background:var(--green-bg);border-radius:14px;padding:24px;text-align:center}
+  .verify-box .ic{width:44px;height:44px;border-radius:12px;background:#fff;color:var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:20px}
+  .verify-box strong{word-break:break-all}
+  .dev-link{margin-top:14px;font-size:12px;word-break:break-all;background:#fff;border-radius:8px;padding:8px;color:var(--gray)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;width:100%">
+    <div class="logo"><div class="mark">M</div> MYBOUTIK</div>
+    <nav>
+      <button class="btn btn-ghost" onclick="openAuth('login')">Se connecter</button>
+      <button class="btn btn-primary" onclick="openAuth('register')">Démarrer gratuitement</button>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="badge">Vendre en ligne, simplement</div>
+  <h1>Lancez votre boutique,<br><span>vendez dès aujourd'hui.</span></h1>
+  <p>Créez votre boutique en ligne, ajoutez vos produits et recevez vos commandes en paiement à la livraison — plusieurs boutiques, un seul compte.</p>
+  <div class="hero-ctas">
+    <button class="btn btn-primary" onclick="openAuth('register')">Créer ma boutique</button>
+    <button class="btn btn-ghost" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">Voir les fonctionnalités</button>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="features" id="features">
+    <div class="card"><div class="ic">🛍️</div><h3>Votre boutique en ligne</h3><p>Catalogue de produits, page boutique publique prête à partager avec vos clients.</p></div>
+    <div class="card"><div class="ic">🚚</div><h3>Paiement à la livraison</h3><p>Le mode de paiement que vos clients utilisent déjà — aucune intégration bancaire requise.</p></div>
+    <div class="card"><div class="ic">📊</div><h3>Commandes, stock et finances</h3><p>Un seul tableau de bord pour suivre commandes, livraisons, clients et résultat net.</p></div>
+    <div class="card"><div class="ic">🏬</div><h3>Multi-boutiques</h3><p>Gérez plusieurs boutiques depuis un seul compte, chacune avec son propre catalogue.</p></div>
+  </div>
+</div>
+
+<footer>MYBOUTIK — Paiement à la livraison · Multi-boutiques · Support en français</footer>
+
+<!-- ============ Auth modal ============ -->
+<div class="overlay" id="authOverlay">
+  <div class="modal">
+    <button class="close" onclick="closeAuth()">✕</button>
+
+    <div id="viewLogin">
+      <h2>Se connecter</h2>
+      <div class="sub">Accédez à vos boutiques</div>
+      <div id="loginMsg"></div>
+      <div class="field"><label>Email</label><input type="email" id="loginEmail" autocomplete="email"></div>
+      <div class="field"><label>Mot de passe</label><input type="password" id="loginPassword" autocomplete="current-password"></div>
+      <button class="btn btn-primary btn-block" onclick="doLogin()">Se connecter</button>
+      <div class="switch">Pas encore de compte ? <a onclick="openAuth('register')">Créer un compte</a></div>
+    </div>
+
+    <div id="viewRegister" style="display:none">
+      <h2>Créer un compte</h2>
+      <div class="sub">Lancez votre boutique en quelques minutes</div>
+      <div id="registerMsg"></div>
+      <div class="field"><label>Nom complet</label><input type="text" id="regName" autocomplete="name"></div>
+      <div class="field"><label>Email</label><input type="email" id="regEmail" autocomplete="email"></div>
+      <div class="field"><label>Mot de passe</label><input type="password" id="regPassword" autocomplete="new-password"></div>
+      <button class="btn btn-primary btn-block" onclick="doRegister()">Créer mon compte</button>
+      <div class="switch">Déjà un compte ? <a onclick="openAuth('login')">Se connecter</a></div>
+    </div>
+
+    <div id="viewPending" style="display:none">
+      <h2>Créer un compte</h2>
+      <div class="sub">Lancez votre boutique en quelques minutes</div>
+      <div class="verify-box">
+        <div class="ic">✉️</div>
+        <div style="font-weight:700;margin-bottom:8px">Vérifiez votre email</div>
+        <div style="color:var(--gray);font-size:14px">Nous avons envoyé un lien de confirmation à<br><strong id="pendingEmail"></strong></div>
+        <div id="pendingDevLink" class="dev-link" style="display:none"></div>
+      </div>
+      <div style="text-align:center;font-size:13px;color:var(--gray);margin-top:16px">Pas d'email reçu ? Vérifiez votre dossier spam.</div>
+      <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="resendVerification()">Renvoyer l'email de confirmation</button>
+      <div class="switch">Déjà un compte ? <a onclick="openAuth('login')">Se connecter</a></div>
+    </div>
+
+    <div id="viewVerify" style="display:none">
+      <h2>Vérification de l'email</h2>
+      <div id="verifyMsg"></div>
+      <button class="btn btn-primary btn-block" onclick="openAuth('login')">Se connecter</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script>
+const API_URL = window.MYBOUTIK_API_URL || 'http://localhost:8000';
+
+function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  return fetch(API_URL+path, Object.assign({}, opts, {headers}))
+    .then(r => r.json().then(data => ({status:r.status, data})))
+    .catch(() => ({status:0, data:{success:false, message:'Impossible de contacter le serveur.'}}));
+}
+
+function openAuth(view) {
+  document.getElementById('authOverlay').classList.add('open');
+  showView(view);
+}
+function closeAuth() { document.getElementById('authOverlay').classList.remove('open'); }
+function showView(view) {
+  ['Login','Register','Pending','Verify'].forEach(v => {
+    document.getElementById('view'+v).style.display = (v.toLowerCase() === view) ? 'block' : 'none';
+  });
+}
+
+function setMsg(id, text, type) {
+  const el = document.getElementById(id);
+  el.innerHTML = text ? '<div class="msg '+type+'">'+text+'</div>' : '';
+}
+
+function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  setMsg('loginMsg','','');
+  api('/auth?action=login', {method:'POST', body:JSON.stringify({email,password})}).then(({data}) => {
+    if (!data.success) return setMsg('loginMsg', data.message, 'error');
+    localStorage.setItem('myboutik_token', data.data.token);
+    localStorage.setItem('myboutik_user', JSON.stringify(data.data.user));
+    window.location.href = 'dashboard/index.html';
+  });
+}
+
+function doRegister() {
+  const full_name = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPassword').value;
+  setMsg('registerMsg','','');
+  api('/auth?action=register', {method:'POST', body:JSON.stringify({full_name,email,password})}).then(({data}) => {
+    if (!data.success) return setMsg('registerMsg', data.message, 'error');
+    document.getElementById('pendingEmail').textContent = data.data.email;
+    const devLink = document.getElementById('pendingDevLink');
+    if (data.data.verify_link_dev_only) {
+      devLink.style.display = 'block';
+      devLink.innerHTML = 'Mode developpement — lien direct : <a href="'+data.data.verify_link_dev_only+'">'+data.data.verify_link_dev_only+'</a>';
+    } else {
+      devLink.style.display = 'none';
+    }
+    showView('pending');
+  });
+}
+
+function resendVerification() {
+  const email = document.getElementById('pendingEmail').textContent;
+  api('/auth?action=resend', {method:'POST', body:JSON.stringify({email})}).then(({data}) => {
+    alert(data.message || 'Si un compte existe avec cet email, un nouveau lien vient d\'etre envoye.');
+  });
+}
+
+function checkVerifyToken() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('verify');
+  if (!token) return;
+  openAuth('verify');
+  api('/auth?action=verify', {method:'POST', body:JSON.stringify({token})}).then(({data}) => {
+    setMsg('verifyMsg', data.message, data.success ? 'success' : 'error');
+  });
+}
+checkVerifyToken();
+
+// Deja connecte ? on evite de re-proposer la page marketing.
+if (localStorage.getItem('myboutik_token') && !new URLSearchParams(window.location.search).get('verify')) {
+  window.location.href = 'dashboard/index.html';
+}
+</script>
+</body>
+</html>

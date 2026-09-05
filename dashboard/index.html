@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MYBOUTIK — Tableau de bord</title>
+<style>
+  :root{
+    --blue:#2563eb; --blue-dark:#1d4ed8; --ink:#0f172a; --gray:#64748b;
+    --border:#e2e8f0; --bg:#f8fafc; --green:#16a34a; --green-bg:#ecfdf5;
+    --red:#dc2626; --red-bg:#fef2f2; --amber:#d97706; --amber-bg:#fffbeb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:inherit;text-decoration:none}
+  button,select,input,textarea{font-family:inherit}
+  #app{display:flex;min-height:100vh}
+
+  /* Sidebar */
+  #sidebar{width:230px;background:#fff;border-right:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column}
+  .side-top{padding:16px;border-bottom:1px solid var(--border)}
+  .side-top .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;margin-bottom:10px}
+  .side-top .mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#3b82f6,#1e40af);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px}
+  select#boutiqueSwitch{width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:13px}
+  .side-back{display:block;padding:10px 16px;font-size:13px;color:var(--gray);border-bottom:1px solid var(--border)}
+  .side-back:hover{background:var(--bg)}
+  nav.side-nav{flex:1;overflow-y:auto;padding:8px}
+  .side-group{font-size:11px;text-transform:uppercase;color:var(--gray);font-weight:700;padding:14px 12px 4px}
+  .side-link{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;font-size:14px;color:var(--ink);cursor:pointer}
+  .side-link:hover{background:var(--bg)}
+  .side-link.active{background:#eff6ff;color:var(--blue);font-weight:600}
+  .side-sub{padding-left:26px}
+
+  /* Topbar + content */
+  #main{flex:1;display:flex;flex-direction:column;min-width:0}
+  #topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:#fff;border-bottom:1px solid var(--border)}
+  #topbar h1{font-size:16px}
+  .top-actions{display:flex;gap:8px;align-items:center}
+  #content{padding:24px;flex:1;max-width:1200px;width:100%;margin:0 auto}
+
+  .btn{border:none;border-radius:10px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer}
+  .btn-primary{background:var(--blue);color:#fff}
+  .btn-primary:hover{background:var(--blue-dark)}
+  .btn-ghost{background:#fff;color:var(--ink);border:1px solid var(--border)}
+  .btn-ghost:hover{background:var(--bg)}
+  .btn-danger{background:var(--red-bg);color:var(--red)}
+  .btn-sm{padding:6px 10px;font-size:13px;border-radius:8px}
+
+  h2.page-title{font-size:22px;margin-bottom:4px}
+  .page-sub{color:var(--gray);font-size:14px;margin-bottom:20px}
+  .row-between{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
+  .kpi{background:#fff;border:1px solid var(--border);border-radius:14px;padding:18px}
+  .kpi .lbl{font-size:13px;color:var(--gray);display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .kpi .val{font-size:24px;font-weight:800}
+
+  .card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
+  .card h3{font-size:15px;margin-bottom:14px}
+  .empty{text-align:center;color:var(--gray);font-size:14px;padding:36px 12px}
+  .empty .big{font-size:30px;margin-bottom:8px}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  table th{text-align:left;color:var(--gray);font-weight:600;font-size:12px;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--border)}
+  table td{padding:10px 10px;border-bottom:1px solid var(--border)}
+  table tr:last-child td{border-bottom:none}
+
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill-pending{background:var(--amber-bg);color:var(--amber)}
+  .pill-processing,.pill-assigned,.pill-shipped,.pill-in_delivery{background:#eff6ff;color:var(--blue)}
+  .pill-delivered{background:var(--green-bg);color:var(--green)}
+  .pill-refused,.pill-cancelled{background:var(--red-bg);color:var(--red)}
+  .pill-to_assign{background:#f1f5f9;color:var(--gray)}
+
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  .field input,.field select,.field textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:9px;font-size:14px}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+  .tabs{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+  .tab{padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:#fff;font-size:13px;font-weight:600;cursor:pointer;color:var(--gray)}
+  .tab.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  .overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .overlay.open{display:flex}
+  .modal{background:#fff;border-radius:16px;max-width:440px;width:100%;padding:28px;max-height:88vh;overflow-y:auto}
+  .modal h2{font-size:18px;margin-bottom:16px}
+  .modal-actions{display:flex;gap:10px;margin-top:8px}
+  .msg{font-size:13px;border-radius:10px;padding:9px 11px;margin-bottom:12px}
+  .msg.error{background:var(--red-bg);color:var(--red)}
+  .msg.success{background:var(--green-bg);color:#15803d}
+
+  .progress-bar{height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin:14px 0}
+  .progress-bar .fill{height:100%;background:linear-gradient(90deg,#3b82f6,#1d4ed8)}
+  .boutique-card{border:1px solid var(--border);border-radius:14px;padding:18px;background:#fff;display:flex;flex-direction:column;gap:10px}
+  .grades-list .grade-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+  .grades-list .grade-row:last-child{border-bottom:none}
+  .muted{color:var(--gray);font-size:13px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div class="side-top">
+      <div class="logo"><div class="mark">M</div> MYBOUTIK</div>
+      <select id="boutiqueSwitch" onchange="switchBoutique(this.value)"></select>
+    </div>
+    <a class="side-back" href="#/boutiques">← Toutes mes boutiques</a>
+    <nav class="side-nav" id="sideNav"></nav>
+  </div>
+  <div id="main">
+    <div id="topbar">
+      <h1 id="topTitle">Tableau de bord</h1>
+      <div class="top-actions">
+        <span class="muted" id="userEmail"></span>
+        <button class="btn btn-ghost btn-sm" onclick="logout()">Se déconnecter</button>
+      </div>
+    </div>
+    <div id="content"></div>
+  </div>
+</div>
+
+<div class="overlay" id="modalOverlay"><div class="modal" id="modalBody"></div></div>
+
+<script src="../config.js"></script>
+<script>
+const API_URL = window.MYBOUTIK_API_URL || 'http://localhost:8000';
+const TOKEN = localStorage.getItem('myboutik_token');
+if (!TOKEN) window.location.href = '../index.html';
+const USER = JSON.parse(localStorage.getItem('myboutik_user') || '{}');
+
+let BOUTIQUES = [];
+let CURRENT = null; // boutique courante {id,slug,name,...}
+
+function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}, opts.headers||{});
+  return fetch(API_URL+path, Object.assign({}, opts, {headers}))
+    .then(r => r.json().then(data => ({status:r.status, data})).catch(()=>({status:r.status,data:{success:false,message:'Reponse invalide'}})))
+    .catch(() => ({status:0, data:{success:false, message:'Impossible de contacter le serveur.'}}))
+    .then(res => {
+      if (res.status === 401) { logout(); }
+      return res;
+    });
+}
+function post(path, body) { return api(path, {method:'POST', body:JSON.stringify(body||{})}); }
+function logout() { localStorage.removeItem('myboutik_token'); localStorage.removeItem('myboutik_user'); window.location.href = '../index.html'; }
+
+function fmtMoney(n, currency) { return Math.round(n||0).toLocaleString('fr-FR') + ' ' + (currency||'FCFA'); }
+function fmtDate(iso) { if(!iso) return '—'; const d = new Date(iso); return d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }
+function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+const STATUS_LABELS = {
+  pending:'En attente', processing:'Validée', shipped:'Expédiée', delivered:'Livrée',
+  refused:'Refusée', cancelled:'Annulée',
+  to_assign:'À assigner', assigned:'Assignée', in_delivery:'En livraison',
+};
+function pill(status){ return '<span class="pill pill-'+status+'">'+(STATUS_LABELS[status]||status)+'</span>'; }
+
+function openModal(html) { document.getElementById('modalBody').innerHTML = html; document.getElementById('modalOverlay').classList.add('open'); }
+function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+
+// ============================================================
+// Chargement des boutiques + routeur
+// ============================================================
+document.getElementById('userEmail').textContent = USER.email || '';
+
+function loadBoutiques() {
+  return api('/boutiques?action=list').then(({data}) => {
+    if (!data.success) return [];
+    BOUTIQUES = data.data;
+    const sel = document.getElementById('boutiqueSwitch');
+    sel.innerHTML = BOUTIQUES.map(b => '<option value="'+b.slug+'">'+escapeHtml(b.name)+'</option>').join('')
+      || '<option value="">Aucune boutique</option>';
+    return BOUTIQUES;
+  });
+}
+function switchBoutique(slug) { if (slug) window.location.hash = '#/'+slug+'/home'; }
+
+function route() {
+  const hash = window.location.hash.replace(/^#\/?/, '');
+  const parts = hash.split('/').filter(Boolean);
+  loadBoutiques().then(() => {
+    if (parts[0] !== undefined && parts[0] !== 'boutiques' && BOUTIQUES.some(b => b.slug === parts[0])) {
+      CURRENT = BOUTIQUES.find(b => b.slug === parts[0]);
+      document.getElementById('boutiqueSwitch').value = CURRENT.slug;
+      renderSidebar(CURRENT, parts.slice(1).join('/') || 'home');
+      renderSection(CURRENT, parts.slice(1).join('/') || 'home');
+    } else {
+      CURRENT = null;
+      document.getElementById('sideNav').innerHTML = '';
+      document.getElementById('topTitle').textContent = 'Mes boutiques';
+      renderBoutiquesList();
+    }
+  });
+}
+window.addEventListener('hashchange', route);
+route();
+
+// ============================================================
+// Sidebar
+// ============================================================
+const NAV = [
+  {group:'', items:[['home','🏠','Accueil'], ['grade','🏆','Mon grade']]},
+  {group:'Ventes', items:[['orders','🛒','Commandes'], ['orders/delivery','🚚','Livraisons'], ['orders/abandoned','📥','Commandes abandonnées']]},
+  {group:'Clients', items:[['customers','👤','Liste des clients'], ['contacts','📇','Carnet d\'adresses']]},
+  {group:'Finances', items:[['finance/overview','👁️','Vue Globale'], ['finance/accounts','📖','Livre de Compte'],
+    ['finance/delivery-fees','🚛','Frais de livraison'], ['finance/detail','⏱️','Finance Détaillée'], ['finance/ads','📣','Publicités & ROAS']]},
+  {group:'Catalogue', items:[['products','📦','Produits'], ['products/stock','📊','Stock'], ['products/suppliers','🚛','Fournisseurs'], ['products/supplier-orders','🧾','Commandes fournisseurs']]},
+  {group:'Analytique', items:[['analytics/reports','📈','Rapports'], ['analytics/live','🔴','Live']]},
+  {group:'Marketing', items:[['marketing','✉️','Messages et abonnés']]},
+  {group:'', items:[['settings','⚙️','Paramètres']]},
+];
+function renderSidebar(bt, current) {
+  document.getElementById('sideNav').innerHTML = NAV.map(g => (g.group ? '<div class="side-group">'+g.group+'</div>' : '') +
+    g.items.map(([key,icon,label]) =>
+      '<a class="side-link'+(current===key?' active':'')+'" href="#/'+bt.slug+'/'+key+'">'+icon+' '+label+'</a>'
+    ).join('')
+  ).join('');
+}
+
+// ============================================================
+// Vue "Mes boutiques"
+// ============================================================
+function renderBoutiquesList() {
+  const html = `
+    <div class="row-between">
+      <div><h2 class="page-title">Mes boutiques</h2><div class="page-sub">Choisissez la boutique à gérer, ou lancez-en une nouvelle.</div></div>
+      <button class="btn btn-primary" onclick="openCreateBoutique()">+ Créer une boutique</button>
+    </div>
+    <div id="boutiquesGrid" class="kpi-grid"></div>
+  `;
+  document.getElementById('content').innerHTML = html;
+  const grid = document.getElementById('boutiquesGrid');
+  if (BOUTIQUES.length === 0) {
+    grid.innerHTML = '<div class="card empty" style="grid-column:1/-1"><div class="big">🏬</div>Aucune boutique pour le moment.<br><br><button class="btn btn-primary" onclick="openCreateBoutique()">Créer ma première boutique</button></div>';
+    return;
+  }
+  grid.innerHTML = BOUTIQUES.map(b => `
+    <div class="boutique-card">
+      <div style="font-weight:700">${escapeHtml(b.name)}</div>
+      <div class="muted">/${escapeHtml(b.slug)}</div>
+      <div style="display:flex;gap:16px;font-size:13px;color:var(--gray)">
+        <div><strong style="color:var(--ink)">${b.stats.commandes}</strong> commandes</div>
+        <div><strong style="color:var(--ink)">${b.stats.en_attente}</strong> en attente</div>
+      </div>
+      <div style="font-weight:700">${fmtMoney(b.stats.ca_encaisse, b.currency)}</div>
+      <a class="btn btn-primary btn-sm" style="text-align:center" href="#/${b.slug}/home">Gérer →</a>
+    </div>
+  `).join('');
+}
+
+function openCreateBoutique() {
+  openModal(`
+    <h2>Créer une boutique</h2>
+    <div id="createBoutiqueMsg"></div>
+    <div class="field"><label>Nom de la boutique</label><input id="newBoutiqueName" placeholder="Ex: Boutik de Rom"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="submitCreateBoutique()">Créer</button>
+    </div>
+  `);
+}
+function submitCreateBoutique() {
+  const name = document.getElementById('newBoutiqueName').value.trim();
+  if (!name) return;
+  post('/boutiques?action=create', {name}).then(({data}) => {
+    if (!data.success) { document.getElementById('createBoutiqueMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
+    closeModal();
+    loadBoutiques().then(() => { window.location.hash = '#/'+data.data.slug+'/home'; });
+  });
+}
+
+// ============================================================
+// Aiguillage des sections d'une boutique
+// ============================================================
+function renderSection(bt, section) {
+  document.getElementById('topTitle').textContent = bt.name;
+  const map = {
+    'home': renderHome, 'grade': renderGrade,
+    'orders': renderOrders, 'orders/delivery': renderDeliveries, 'orders/abandoned': renderAbandoned,
+    'customers': renderCustomers, 'contacts': renderContacts,
+    'finance/overview': renderFinanceOverview, 'finance/accounts': renderFinanceAccounts,
+    'finance/delivery-fees': renderFinanceDeliveryFees, 'finance/detail': renderFinanceDetail, 'finance/ads': renderFinanceAds,
+    'products': renderProducts, 'products/stock': renderStock, 'products/suppliers': renderSuppliers, 'products/supplier-orders': renderSupplierOrders,
+    'analytics/reports': renderReports, 'analytics/live': renderLive,
+    'marketing': renderMarketing, 'settings': renderSettings,
+  };
+  (map[section] || renderHome)(bt);
+}
+
+function periodSelectHtml(id, current) {
+  return `<select id="${id}" onchange="window.__periodChange && window.__periodChange(this.value)" style="padding:8px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px">
+    <option value="7d" ${current==='7d'?'selected':''}>7 derniers jours</option>
+    <option value="30d" ${current==='30d'?'selected':''}>30 derniers jours</option>
+    <option value="90d" ${current==='90d'?'selected':''}>90 derniers jours</option>
+    <option value="all" ${current==='all'?'selected':''}>Depuis le début</option>
+  </select>`;
+}
+
+// ============================================================
+// Accueil
+// ============================================================
+function renderHome(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  Promise.all([
+    api('/analytics?action=live&boutique_id='+bt.id),
+    api('/analytics?action=report&boutique_id='+bt.id+'&period=30d'),
+  ]).then(([live, report]) => {
+    const L = live.data.data || {}; const R = report.data.data || {};
+    document.getElementById('content').innerHTML = `
+      <h2 class="page-title">Bonjour 👋</h2>
+      <div class="page-sub">Voici comment <strong>${escapeHtml(bt.name)}</strong> se porte aujourd'hui.</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="lbl">💰 Ventes totales (30j)</div><div class="val">${fmtMoney(R.ventes_brutes, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">🛒 Commandes (30j)</div><div class="val">${R.commandes||0}</div></div>
+        <div class="kpi"><div class="lbl">📦 Livrées (30j)</div><div class="val">${R.livrees||0}</div></div>
+        <div class="kpi"><div class="lbl">🧾 Panier moyen</div><div class="val">${fmtMoney(R.panier_moyen, bt.currency)}</div></div>
+      </div>
+      <div class="card">
+        <h3>Commandes récentes</h3>
+        ${renderOrdersTable(L.commandes_recentes||[], bt, true)}
+      </div>
+      <div class="card">
+        <h3>Meilleurs produits (30 derniers jours)</h3>
+        ${(R.best_sellers && R.best_sellers.length) ? `
+          <table><thead><tr><th>Produit</th><th>Qté vendue</th><th>Revenu</th></tr></thead><tbody>
+          ${R.best_sellers.map(p => '<tr><td>'+escapeHtml(p.product_name||'—')+'</td><td>'+p.qty+'</td><td>'+fmtMoney(p.revenue, bt.currency)+'</td></tr>').join('')}
+          </tbody></table>` : '<div class="empty"><div class="big">🏆</div>Pas encore de ventes.<br>Les produits les plus vendus apparaîtront ici.</div>'}
+      </div>
+      <div class="card">
+        <h3>Flux d'activité</h3>
+        ${(L.activite && L.activite.length) ? '<div>'+L.activite.map(a => '<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px"><span class="muted">'+fmtDate(a.created_at)+'</span> — '+escapeHtml(a.message)+'</div>').join('')+'</div>'
+          : '<div class="empty">Aucune activité pour l\'instant.</div>'}
+      </div>
+    `;
+  });
+}
+
+function renderOrdersTable(rows, bt, compact) {
+  if (!rows.length) return '<div class="empty"><div class="big">🛍️</div>Aucune commande pour l\'instant.</div>';
+  return `<table><thead><tr><th>Réf</th><th>Client</th><th>Total</th><th>Statut</th>${compact?'':'<th>Date</th><th></th>'}</tr></thead><tbody>
+    ${rows.map(o => `<tr>
+      <td>${escapeHtml(o.ref)}</td><td>${escapeHtml(o.customer_name)}<br><span class="muted">${escapeHtml(o.customer_phone)}</span></td>
+      <td>${fmtMoney(o.total, bt.currency)}</td><td>${pill(o.status)}</td>
+      ${compact?'':'<td>'+fmtDate(o.created_at)+'</td><td>'+orderStatusSelect(o)+'</td>'}
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+function orderStatusSelect(o) {
+  const opts = ['pending','processing','shipped','delivered','refused','cancelled'];
+  return '<select onchange="updateOrderStatus(\''+o.id+'\',this.value)" style="padding:5px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px">'
+    + opts.map(s => '<option value="'+s+'" '+(s===o.status?'selected':'')+'>'+STATUS_LABELS[s]+'</option>').join('') + '</select>';
+}
+function updateOrderStatus(id, status) {
+  post('/orders?action=update_status', {boutique_id:CURRENT.id, id, status}).then(() => route());
+}
+
+// ============================================================
+// Mon grade
+// ============================================================
+function renderGrade(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/boutiques?action=grade&boutique_id='+bt.id).then(({data}) => {
+    const g = data.data;
+    document.getElementById('content').innerHTML = `
+      <h2 class="page-title">${g.current_name ? g.current_name : 'Pas encore de grade'}</h2>
+      <div class="page-sub">${g.next_name ? 'En route vers '+g.next_name : 'Grade maximum atteint !'}</div>
+      <div class="card">
+        <div style="font-size:14px">${fmtMoney(g.total, bt.currency)} encaissés depuis l'ouverture.</div>
+        <div class="progress-bar"><div class="fill" style="width:${g.progress_pct}%"></div></div>
+        ${g.next_min ? '<div class="muted">Encore <strong>'+fmtMoney(g.remaining, bt.currency)+'</strong> pour devenir '+g.next_name+'.</div>' : ''}
+      </div>
+      <div class="card">
+        <h3>Tous les paliers</h3>
+        <div class="page-sub">Chaque palier est acquis pour de bon : le cumul ne redescend jamais.</div>
+        <div class="grades-list">
+          ${g.all.map(x => `<div class="grade-row">
+            <div>${x.name}<div class="muted">${fmtMoney(x.min, bt.currency)}</div></div>
+            <div>${g.total >= x.min ? '<span class="pill pill-delivered">Atteint</span>' : (x.name===g.next_name ? '<span class="pill pill-pending">En cours</span>' : '<span class="muted">🔒</span>')}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+    `;
+  });
+}
+
+// ============================================================
+// Commandes
+// ============================================================
+function renderOrders(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  loadOrdersView(bt, '', '');
+}
+function loadOrdersView(bt, status, q) {
+  api('/orders?action=list&boutique_id='+bt.id+'&status='+encodeURIComponent(status)+'&q='+encodeURIComponent(q)).then(({data}) => {
+    const rows = data.data || [];
+    document.getElementById('content').innerHTML = `
+      <div class="row-between">
+        <div><h2 class="page-title">Commandes</h2><div class="page-sub">Gérer toutes vos commandes COD</div></div>
+        <button class="btn btn-primary" onclick="openNewOrder()">+ Nouvelle commande</button>
+      </div>
+      <div class="card">
+        <div class="field-row" style="margin-bottom:14px">
+          <input id="ordersSearch" placeholder="Rechercher (réf, nom, téléphone)…" value="${escapeHtml(q)}">
+          <select id="ordersStatus" onchange="loadOrdersView(CURRENT,this.value,document.getElementById('ordersSearch').value)">
+            ${['','pending','processing','shipped','delivered','refused','cancelled'].map(s=>'<option value="'+s+'" '+(s===status?'selected':'')+'>'+(s?STATUS_LABELS[s]:'Toutes')+'</option>').join('')}
+          </select>
+        </div>
+        ${renderOrdersTable(rows, bt, false)}
+      </div>
+    `;
+    document.getElementById('ordersSearch').addEventListener('keydown', e => { if (e.key==='Enter') loadOrdersView(bt, document.getElementById('ordersStatus').value, e.target.value); });
+  });
+}
+function openNewOrder() {
+  api('/products?action=list&boutique_id='+CURRENT.id).then(({data}) => {
+    const products = (data.data||[]).filter(p=>p.status==='active');
+    openModal(`
+      <h2>Nouvelle commande</h2>
+      <div id="newOrderMsg"></div>
+      <div class="field"><label>Nom du client</label><input id="ordCustName"></div>
+      <div class="field"><label>Téléphone</label><input id="ordCustPhone"></div>
+      <div class="field"><label>Adresse</label><input id="ordCustAddress"></div>
+      <div class="field"><label>Produit</label>
+        <select id="ordProduct">${products.map(p=>'<option value="'+p.id+'" data-price="'+p.price+'">'+escapeHtml(p.name)+' — '+fmtMoney(p.price,CURRENT.currency)+'</option>').join('')}</select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Quantité</label><input id="ordQty" type="number" min="1" value="1"></div>
+        <div class="field"><label>Frais de livraison</label><input id="ordDeliveryFee" type="number" min="0" value="0"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+        <button class="btn btn-primary" onclick="submitNewOrder()">Créer la commande</button>
+      </div>
+    `);
+  });
+}
+function submitNewOrder() {
+  const sel = document.getElementById('ordProduct');
+  if (!sel.value) { document.getElementById('newOrderMsg').innerHTML = '<div class="msg error">Ajoutez au moins un produit actif avant de créer une commande.</div>'; return; }
+  const payload = {
+    boutique_id: CURRENT.id,
+    customer_name: document.getElementById('ordCustName').value.trim(),
+    customer_phone: document.getElementById('ordCustPhone').value.trim(),
+    customer_address: document.getElementById('ordCustAddress').value.trim(),
+    delivery_fee: Number(document.getElementById('ordDeliveryFee').value||0),
+    items: [{product_id: sel.value, qty: Number(document.getElementById('ordQty').value||1)}],
+  };
+  post('/orders?action=create', payload).then(({data}) => {
+    if (!data.success) { document.getElementById('newOrderMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
+    closeModal(); route();
+  });
+}
+
+// ============================================================
+// Livraisons
+// ============================================================
+function renderDeliveries(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  Promise.all([api('/deliveries?action=list&boutique_id='+bt.id), api('/deliveries?action=persons&boutique_id='+bt.id)]).then(([dl, persons]) => {
+    const rows = dl.data.data || []; const P = persons.data.data || [];
+    const cols = ['to_assign','assigned','in_delivery','delivered','refused'];
+    document.getElementById('content').innerHTML = `
+      <div class="row-between">
+        <div><h2 class="page-title">Livraisons</h2><div class="page-sub">Assignez les commandes à un livreur et suivez chaque étape.</div></div>
+        <button class="btn btn-primary" onclick="openAddDeliveryPerson()">+ Ajouter un livreur</button>
+      </div>
+      ${P.filter(p=>p.active).length===0 ? '<div class="card" style="background:var(--amber-bg);border-color:#fde68a">Aucun livreur actif sur cette boutique. Ajoutez-en un pour pouvoir assigner les commandes.</div>' : ''}
+      <div class="tabs">${cols.map(c=>'<div class="tab" onclick="filterDeliveries(\''+c+'\')">'+STATUS_LABELS[c]+' ('+rows.filter(r=>r.status===c).length+')</div>').join('')}</div>
+      <div class="card" id="deliveriesTableWrap">${renderDeliveriesTable(rows, bt, P)}</div>
+    `;
+    window.__deliveriesAll = rows; window.__deliveryPersons = P;
+  });
+}
+function filterDeliveries(status) {
+  const rows = (window.__deliveriesAll||[]).filter(r=>r.status===status);
+  document.getElementById('deliveriesTableWrap').innerHTML = renderDeliveriesTable(rows, CURRENT, window.__deliveryPersons);
+}
+function renderDeliveriesTable(rows, bt, persons) {
+  if (!rows.length) return '<div class="empty"><div class="big">📦</div>Aucune commande dans cette catégorie.</div>';
+  const activePersons = persons.filter(p=>p.active);
+  return `<table><thead><tr><th>Réf</th><th>Client</th><th>Statut</th><th>Livreur</th><th></th></tr></thead><tbody>
+    ${rows.map(r => `<tr>
+      <td>${escapeHtml(r.ref)}</td><td>${escapeHtml(r.customer_name)}<br><span class="muted">${escapeHtml(r.customer_address||'')}</span></td>
+      <td>${pill(r.status)}</td>
+      <td>${r.status==='to_assign' ? '<select onchange="assignDelivery(\''+r.order_id+'\',this.value)"><option value="">Choisir…</option>'+activePersons.map(p=>'<option value="'+p.id+'">'+escapeHtml(p.name)+'</option>').join('')+'</select>' : escapeHtml(r.delivery_person_name||'—')}</td>
+      <td>${deliveryStatusSelect(r)}</td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+function deliveryStatusSelect(r) {
+  const opts = ['to_assign','assigned','in_delivery','delivered','refused'];
+  return '<select onchange="updateDeliveryStatus(\''+r.order_id+'\',this.value)" style="padding:5px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px">'
+    + opts.map(s=>'<option value="'+s+'" '+(s===r.status?'selected':'')+'>'+STATUS_LABELS[s]+'</option>').join('') + '</select>';
+}
+function assignDelivery(orderId, personId) { if(!personId) return; post('/deliveries?action=assign', {boutique_id:CURRENT.id, order_id:orderId, delivery_person_id:personId}).then(()=>route()); }
+function updateDeliveryStatus(orderId, status) { post('/deliveries?action=update_status', {boutique_id:CURRENT.id, order_id:orderId, status}).then(()=>route()); }
+function openAddDeliveryPerson() {
+  openModal(`<h2>Ajouter un livreur</h2>
+    <div class="field"><label>Nom</label><input id="dpName"></div>
+    <div class="field"><label>Téléphone</label><input id="dpPhone"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="submitAddDeliveryPerson()">Ajouter</button></div>`);
+}
+function submitAddDeliveryPerson() {
+  const name = document.getElementById('dpName').value.trim();
+  if (!name) return;
+  post('/deliveries?action=person_create', {boutique_id:CURRENT.id, name, phone:document.getElementById('dpPhone').value.trim()}).then(()=>{closeModal(); route();});
+}
+
+// ============================================================
+// Commandes abandonnées
+// ============================================================
+function renderAbandoned(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  Promise.all([api('/orders?action=abandoned_list&boutique_id='+bt.id+'&filter=abandoned'), api('/orders?action=abandoned_settings_get&boutique_id='+bt.id)])
+    .then(([list, settings]) => {
+      const rows = list.data.data || []; const S = settings.data.data || {};
+      document.getElementById('content').innerHTML = `
+        <h2 class="page-title">Commandes abandonnées</h2>
+        <div class="page-sub">Les visiteurs qui ont commencé une commande sans la valider. Rappelez-les pour la récupérer.</div>
+        <div class="card">
+          <h3>Réglages de capture</h3>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><input type="checkbox" id="capEnabled" ${S.capture_enabled?'checked':''}> Capturer les commandes abandonnées</label>
+          <div class="field-row">
+            <div class="field"><label>Considérer comme abandonné après (minutes)</label><input type="number" id="capTimeout" value="${S.timeout_minutes||15}"></div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveAbandonedSettings()">Enregistrer</button>
+        </div>
+        <div class="card">
+          <h3>Paniers abandonnés</h3>
+          ${rows.length ? `<table><thead><tr><th>Téléphone / Email</th><th>Total estimé</th><th>Capturé le</th><th></th></tr></thead><tbody>
+            ${rows.map(r=>`<tr><td>${escapeHtml(r.phone||r.email||'—')}</td><td>${fmtMoney(r.total, bt.currency)}</td><td>${fmtDate(r.captured_at)}</td>
+              <td><button class="btn btn-ghost btn-sm" onclick="markAbandonedConverted('${r.id}')">Marquer converti</button></td></tr>`).join('')}
+            </tbody></table>` : '<div class="empty"><div class="big">📭</div>Aucune commande abandonnée pour le moment.</div>'}
+        </div>
+      `;
+    });
+}
+function saveAbandonedSettings() {
+  post('/orders?action=abandoned_settings_save', {boutique_id:CURRENT.id, capture_enabled:document.getElementById('capEnabled').checked, timeout_minutes:Number(document.getElementById('capTimeout').value||15)}).then(()=>route());
+}
+function markAbandonedConverted(id) { post('/orders?action=abandoned_mark', {boutique_id:CURRENT.id, id, converted:true}).then(()=>route()); }
+
+// ============================================================
+// Clients / Carnet d'adresses
+// ============================================================
+function renderCustomers(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/customers?action=list&boutique_id='+bt.id).then(({data}) => {
+    const rows = data.data || [];
+    document.getElementById('content').innerHTML = `
+      <h2 class="page-title">Clients</h2><div class="page-sub">Gérez vos clients, leurs statuts et leurs commandes.</div>
+      <div class="card">
+        ${rows.length ? `<table><thead><tr><th>Nom</th><th>Téléphone</th><th>Commandes</th><th>Total dépensé</th></tr></thead><tbody>
+          ${rows.map(c=>`<tr><td>${escapeHtml(c.name||'—')}</td><td>${escapeHtml(c.phone||'—')}</td><td>${c.orders_count}</td><td>${fmtMoney(c.total_spent, bt.currency)}</td></tr>`).join('')}
+          </tbody></table>` : '<div class="empty"><div class="big">👤</div>Aucun client n\'a encore commandé.</div>'}
+      </div>
+    `;
+  });
+}
+function renderContacts(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  Promise.all([api('/contacts?action=roles&boutique_id='+bt.id), api('/contacts?action=list&boutique_id='+bt.id)]).then(([roles, list]) => {
+    const R = roles.data.data || []; const rows = list.data.data || [];
+    document.getElementById('content').innerHTML = `
+      <div class="row-between">
+        <div><h2 class="page-title">Carnet d'adresses</h2><div class="page-sub">Tous les contacts utiles de votre équipe (avocat, comptable, transporteur…)</div></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-ghost" onclick="openAddRole()">Gérer les rôles</button><button class="btn btn-primary" onclick="openAddContact(${JSON.stringify(R).replace(/"/g,'&quot;')})">+ Nouveau contact</button></div>
+      </div>
+      <div class="card">
+        ${rows.length ? `<table><thead><tr><th>Nom</th><th>Rôle</th><th>Téléphone</th><th>Email</th><th></th></tr></thead><tbody>
+          ${rows.map(c=>`<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.role_name||'—')}</td><td>${escapeHtml(c.phone||'')}</td><td>${escapeHtml(c.email||'')}</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="deleteContact('${c.id}')">Supprimer</button></td></tr>`).join('')}
+          </tbody></table>` : '<div class="empty"><div class="big">📇</div>Aucun contact. Commencez par créer un rôle puis ajoutez vos contacts.</div>'}
+      </div>
+    `;
+  });
+}
+function openAddRole() {
+  openModal(`<h2>Nouveau rôle</h2><div class="field"><label>Nom du rôle</label><input id="roleName" placeholder="Ex: Comptable"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitAddRole()">Créer</button></div>`);
+}
+function submitAddRole() {
+  const name = document.getElementById('roleName').value.trim(); if(!name) return;
+  post('/contacts?action=role_create', {boutique_id:CURRENT.id, name}).then(()=>{closeModal(); route();});
+}
+function openAddContact(roles) {
+  openModal(`<h2>Nouveau contact</h2>
+    <div class="field"><label>Nom</label><input id="ctName"></div>
+    <div class="field"><label>Rôle</label><select id="ctRole"><option value="">—</option>${roles.map(r=>'<option value="'+r.id+'">'+escapeHtml(r.name)+'</option>').join('')}</select></div>
+    <div class="field-row"><div class="field"><label>Téléphone</label><input id="ctPhone"></div><div class="field"><label>Email</label><input id="ctEmail"></div></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitAddContact()">Ajouter</button></div>`);
+}
+function submitAddContact() {
+  const name = document.getElementById('ctName').value.trim(); if(!name) return;
+  post('/contacts?action=create', {boutique_id:CURRENT.id, name, role_id:document.getElementById('ctRole').value||null,
+    phone:document.getElementById('ctPhone').value.trim(), email:document.getElementById('ctEmail').value.trim()}).then(()=>{closeModal(); route();});
+}
+function deleteContact(id) { if(!confirm('Supprimer ce contact ?')) return; post('/contacts?action=delete', {boutique_id:CURRENT.id, id}).then(()=>route()); }
+
+// ============================================================
+// Finances
+// ============================================================
+function renderFinanceOverview(bt, period) {
+  period = period || '30d';
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/finance?action=overview&boutique_id='+bt.id+'&period='+period).then(({data}) => {
+    const F = data.data;
+    document.getElementById('content').innerHTML = `
+      <div class="row-between"><div><h2 class="page-title">Vue Globale</h2><div class="page-sub">Santé financière complète — ${escapeHtml(bt.name)}.</div></div>${periodSelectHtml('finPeriod', period)}</div>
+      <div class="card" style="background:${F.resultat_net>=0?'var(--green-bg)':'var(--red-bg)'}">
+        <div class="lbl">Résultat net</div><div style="font-size:30px;font-weight:800">${fmtMoney(F.resultat_net, bt.currency)}</div>
+        <div class="muted">${F.nb_commande_encaissee} commande(s) encaissée(s)</div>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="lbl">💵 Revenus encaissés</div><div class="val">${fmtMoney(F.revenus_encaisses, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">📦 Livraisons faites</div><div class="val">${F.livraisons_faites}</div></div>
+        <div class="kpi"><div class="lbl">🏷️ Coût des produits</div><div class="val">${fmtMoney(F.cout_produits, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">🚚 Frais de livraison</div><div class="val">${fmtMoney(F.frais_livraison, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">📣 Frais de pub</div><div class="val">${fmtMoney(F.frais_pub, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">🧾 Autres dépenses</div><div class="val">${fmtMoney(F.autres_depenses, bt.currency)}</div></div>
+      </div>
+    `;
+    window.__periodChange = p => renderFinanceOverview(bt, p);
+  });
+}
+function renderFinanceAccounts(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/finance?action=accounts&boutique_id='+bt.id).then(({data}) => {
+    const rows = data.data || [];
+    const total = rows.reduce((s,a)=>s+Number(a.balance),0);
+    document.getElementById('content').innerHTML = `
+      <div class="row-between"><div><h2 class="page-title">Livre de Compte</h2><div class="page-sub">Suivez tous vos comptes (caisse, banque, mobile money…)</div></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-ghost" onclick="openTransferAccount(${JSON.stringify(rows).replace(/"/g,'&quot;')})">Transférer</button><button class="btn btn-primary" onclick="openAddAccount()">+ Nouveau compte</button></div></div>
+      <div class="kpi-grid"><div class="kpi"><div class="lbl">Solde total</div><div class="val">${fmtMoney(total, bt.currency)}</div></div></div>
+      ${rows.length ? rows.map(a => `
+        <div class="card">
+          <div class="row-between" style="margin-bottom:6px"><h3>${escapeHtml(a.name)} <span class="muted">(${a.type})</span></h3>
+            <div style="display:flex;gap:6px;align-items:center">
+              <strong>${fmtMoney(a.balance, bt.currency)}</strong>
+              <button class="btn btn-ghost btn-sm" onclick="openAccountMovement('${a.id}','in')">+ Entrée</button>
+              <button class="btn btn-ghost btn-sm" onclick="openAccountMovement('${a.id}','out')">- Sortie</button>
+            </div>
+          </div>
+          ${a.history.length ? '<table><thead><tr><th>Date</th><th>Type</th><th>Montant</th><th>Note</th></tr></thead><tbody>'+
+            a.history.map(h=>'<tr><td>'+fmtDate(h.created_at)+'</td><td>'+(h.type==='in'?'Entrée':'Sortie')+'</td><td>'+fmtMoney(h.amount, bt.currency)+'</td><td>'+escapeHtml(h.note||'')+'</td></tr>').join('')+'</tbody></table>'
+            : '<div class="muted">Aucun mouvement.</div>'}
+        </div>`).join('') : '<div class="card empty"><div class="big">📖</div>Aucun compte. Créez-en un pour suivre entrées et sorties.</div>'}
+    `;
+  });
+}
+function openAddAccount() {
+  openModal(`<h2>Nouveau compte</h2><div class="field"><label>Nom</label><input id="accName" placeholder="Ex: Wave"></div>
+    <div class="field"><label>Type</label><select id="accType"><option value="caisse">Caisse</option><option value="banque">Banque</option><option value="mobile_money">Mobile money</option></select></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitAddAccount()">Créer</button></div>`);
+}
+function submitAddAccount() {
+  const name = document.getElementById('accName').value.trim(); if(!name) return;
+  post('/finance?action=account_create', {boutique_id:CURRENT.id, name, type:document.getElementById('accType').value}).then(()=>{closeModal(); route();});
+}
+function openAccountMovement(accountId, type) {
+  openModal(`<h2>${type==='in'?'Entrée':'Sortie'} de caisse</h2>
+    <div class="field"><label>Montant</label><input id="movAmount" type="number" min="1"></div>
+    <div class="field"><label>Note</label><input id="movNote"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitAccountMovement('${accountId}','${type}')">Valider</button></div>`);
+}
+function submitAccountMovement(accountId, type) {
+  const amount = Number(document.getElementById('movAmount').value||0); if (amount<=0) return;
+  post('/finance?action=account_transaction', {boutique_id:CURRENT.id, account_id:accountId, type, amount, note:document.getElementById('movNote').value.trim()}).then(()=>{closeModal(); route();});
+}
+function openTransferAccount(rows) {
+  if (rows.length<2) { alert('Créez au moins deux comptes pour faire un transfert.'); return; }
+  openModal(`<h2>Transférer entre comptes</h2>
+    <div class="field"><label>Depuis</label><select id="trFrom">${rows.map(a=>'<option value="'+a.id+'">'+escapeHtml(a.name)+'</option>').join('')}</select></div>
+    <div class="field"><label>Vers</label><select id="trTo">${rows.map(a=>'<option value="'+a.id+'">'+escapeHtml(a.name)+'</option>').join('')}</select></div>
+    <div class="field"><label>Montant</label><input id="trAmount" type="number" min="1"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitTransfer()">Transférer</button></div>`);
+}
+function submitTransfer() {
+  const amount = Number(document.getElementById('trAmount').value||0); if (amount<=0) return;
+  post('/finance?action=account_transfer', {boutique_id:CURRENT.id, from_account_id:document.getElementById('trFrom').value, to_account_id:document.getElementById('trTo').value, amount}).then(({data})=>{
+    if(!data.success){ alert(data.message); return; } closeModal(); route();
+  });
+}
+function renderFinanceDeliveryFees(bt, period) {
+  period = period || '30d';
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/finance?action=delivery_fees&boutique_id='+bt.id+'&period='+period).then(({data}) => {
+    const F = data.data;
+    document.getElementById('content').innerHTML = `
+      <div class="row-between"><div><h2 class="page-title">Frais de livraison</h2><div class="page-sub">Les frais de livraison que vous payez (livreurs, transporteurs).</div></div>
+        <button class="btn btn-primary" onclick="openAddDeliveryFee()">+ Ajouter des frais</button></div>
+      <div class="kpi-grid"><div class="kpi"><div class="lbl">Total ce mois-ci</div><div class="val">${fmtMoney(F.total_month, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">Total (${F.count} entrée${F.count>1?'s':''})</div><div class="val">${fmtMoney(F.total_all, bt.currency)}</div></div></div>
+      <div class="card">${F.rows.length ? '<table><thead><tr><th>Date</th><th>Montant</th><th>Note</th></tr></thead><tbody>'+
+        F.rows.map(r=>'<tr><td>'+fmtDate(r.created_at)+'</td><td>'+fmtMoney(r.amount, bt.currency)+'</td><td>'+escapeHtml(r.note||'')+'</td></tr>').join('')+'</tbody></table>'
+        : '<div class="empty"><div class="big">🚛</div>Aucun frais de livraison. Ajoutez le total que vous avez payé en livraison.</div>'}</div>
+    `;
+  });
+}
+function openAddDeliveryFee() {
+  api('/finance?action=accounts&boutique_id='+CURRENT.id).then(({data}) => {
+    const accounts = data.data || [];
+    openModal(`<h2>Ajouter des frais de livraison</h2>
+      <div class="field"><label>Montant</label><input id="dfAmount" type="number" min="1"></div>
+      <div class="field"><label>Note</label><input id="dfNote" placeholder="Ex: Livraisons du jour"></div>
+      <div class="field"><label>Débiter le compte</label><select id="dfAccount"><option value="">—</option>${accounts.map(a=>'<option value="'+a.id+'">'+escapeHtml(a.name)+'</option>').join('')}</select></div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitAddDeliveryFee()">Enregistrer</button></div>`);
+  });
+}
+function submitAddDeliveryFee() {
+  const amount = Number(document.getElementById('dfAmount').value||0); if (amount<=0) return;
+  post('/finance?action=delivery_fee_create', {boutique_id:CURRENT.id, amount, note:document.getElementById('dfNote').value.trim(), account_id:document.getElementById('dfAccount').value||null}).then(()=>{closeModal(); route();});
+}
+function renderFinanceDetail(bt, period) {
+  period = period || '30d';
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/finance?action=detail&boutique_id='+bt.id+'&period='+period).then(({data}) => {
+    const F = data.data;
+    document.getElementById('content').innerHTML = `
+      <div class="row-between"><div><h2 class="page-title">Finance Détaillée</h2><div class="page-sub">${F.rows.length?('Marge par commande livrée.'):'Aucune commande livrée sur cette période.'}</div></div>${periodSelectHtml('finDetailPeriod', period)}</div>
+      ${F.rows.length ? `
+      <div class="kpi-grid">
+        <div class="kpi"><div class="lbl">Revenu</div><div class="val">${fmtMoney(F.total_revenue, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">Coût</div><div class="val">${fmtMoney(F.total_cost, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">Marge</div><div class="val">${fmtMoney(F.total_margin, bt.currency)}</div></div>
+      </div>
+      <div class="card"><table><thead><tr><th>Réf</th><th>Client</th><th>Revenu</th><th>Coût</th><th>Marge</th></tr></thead><tbody>
+        ${F.rows.map(r=>'<tr><td>'+escapeHtml(r.ref)+'</td><td>'+escapeHtml(r.customer_name)+'</td><td>'+fmtMoney(r.total,bt.currency)+'</td><td>'+fmtMoney(r.cost,bt.currency)+'</td><td>'+fmtMoney(r.margin,bt.currency)+'</td></tr>').join('')}
+      </tbody></table></div>`
+      : '<div class="card"><div style="text-align:center;padding:20px">Renseigne aussi le prix de revient de tes produits dans le catalogue pour voir la marge ici.<br><a href="#/'+bt.slug+'/products" style="color:var(--blue);font-weight:600">Ouvrir le catalogue produits →</a></div></div>'}
+    `;
+    window.__periodChange = p => renderFinanceDetail(bt, p);
+  });
+}
+function renderFinanceAds(bt, period) {
+  period = period || '30d';
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/finance?action=ads&boutique_id='+bt.id+'&period='+period).then(({data}) => {
+    const F = data.data;
+    document.getElementById('content').innerHTML = `
+      <div class="row-between"><div><h2 class="page-title">Publicités & ROAS</h2><div class="page-sub">Le retour sur investissement (ROAS) est calculé en croisant avec tes ventes livrées.</div></div>${periodSelectHtml('finAdsPeriod', period)}</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="lbl">Dépense totale</div><div class="val">${fmtMoney(F.depense_totale, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">Revenu attribué (livré)</div><div class="val">${fmtMoney(F.revenu_attribue, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">ROAS global</div><div class="val">${F.roas_global!==null?F.roas_global+'x':'—'}</div></div>
+      </div>
+      <div class="row-between"><h3>Par produit</h3><button class="btn btn-primary btn-sm" onclick="openAddAdExpense()">+ Nouvelle dépense</button></div>
+      <div class="card">${F.by_product.length ? '<table><thead><tr><th>Produit</th><th>Dépense</th><th>Revenu</th><th>ROAS</th></tr></thead><tbody>'+
+        F.by_product.map(p=>'<tr><td>'+escapeHtml(p.product_name||'—')+'</td><td>'+fmtMoney(p.spend,bt.currency)+'</td><td>'+fmtMoney(p.revenue,bt.currency)+'</td><td>'+(p.roas!==null?p.roas+'x':'—')+'</td></tr>').join('')+'</tbody></table>'
+        : '<div class="empty">Aucune dépense attribuée à un produit.</div>'}</div>
+      <h3 style="margin-bottom:10px">Dernières dépenses</h3>
+      <div class="card">${F.recent.length ? '<table><thead><tr><th>Date</th><th>Campagne</th><th>Montant</th></tr></thead><tbody>'+
+        F.recent.map(r=>'<tr><td>'+fmtDate(r.created_at)+'</td><td>'+escapeHtml(r.campaign_name||'—')+'</td><td>'+fmtMoney(r.amount,bt.currency)+'</td></tr>').join('')+'</tbody></table>'
+        : '<div class="empty">Aucune dépense saisie pour l\'instant. Clique « Nouvelle dépense » pour commencer.</div>'}</div>
+    `;
+    window.__periodChange = p => renderFinanceAds(bt, p);
+  });
+}
+function openAddAdExpense() {
+  api('/products?action=list&boutique_id='+CURRENT.id).then(({data}) => {
+    const products = data.data || [];
+    openModal(`<h2>Nouvelle dépense publicitaire</h2>
+      <div class="field"><label>Nom de campagne</label><input id="adCampaign"></div>
+      <div class="field"><label>Produit lié (optionnel)</label><select id="adProduct"><option value="">—</option>${products.map(p=>'<option value="'+p.id+'">'+escapeHtml(p.name)+'</option>').join('')}</select></div>
+      <div class="field"><label>Montant</label><input id="adAmount" type="number" min="1"></div>
+      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitAddAdExpense()">Enregistrer</button></div>`);
+  });
+}
+function submitAddAdExpense() {
+  const amount = Number(document.getElementById('adAmount').value||0); if (amount<=0) return;
+  post('/finance?action=ad_expense_create', {boutique_id:CURRENT.id, amount, campaign_name:document.getElementById('adCampaign').value.trim(), product_id:document.getElementById('adProduct').value||null}).then(()=>{closeModal(); route();});
+}
+
+// ============================================================
+// Produits / Stock / Fournisseurs / Commandes fournisseurs
+// ============================================================
+function renderProducts(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/products?action=list&boutique_id='+bt.id).then(({data}) => {
+    const rows = data.data || [];
+    document.getElementById('content').innerHTML = `
+      <div class="row-between"><div><h2 class="page-title">Produits</h2><div class="page-sub">${rows.length} produit(s)</div></div>
+        <button class="btn btn-primary" onclick="openProductForm()">+ Nouveau produit</button></div>
+      <div class="card">${rows.length ? `<table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Statut</th><th></th></tr></thead><tbody>
+        ${rows.map(p=>`<tr><td>${escapeHtml(p.name)}${p.variants.length?' <span class="muted">('+p.variants.length+' variantes)</span>':''}</td>
+          <td>${fmtMoney(p.price, bt.currency)}</td><td>${p.stock_qty}</td>
+          <td>${p.status==='active'?'<span class="pill pill-delivered">Actif</span>':'<span class="pill pill-to_assign">Brouillon</span>'}</td>
+          <td><button class="btn btn-ghost btn-sm" onclick='openProductForm(${JSON.stringify(p).replace(/'/g,"&#39;")})'>Modifier</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">Suppr.</button></td></tr>`).join('')}
+        </tbody></table>` : '<div class="empty"><div class="big">📦</div>Aucun produit. Ajoutez votre premier produit.</div>'}</div>
+    `;
+  });
+}
+function openProductForm(p) {
+  p = p || {};
+  openModal(`<h2>${p.id?'Modifier le produit':'Nouveau produit'}</h2>
+    <div id="prodMsg"></div>
+    <div class="field"><label>Nom</label><input id="prodName" value="${escapeHtml(p.name||'')}"></div>
+    <div class="field"><label>Description</label><textarea id="prodDesc" rows="2">${escapeHtml(p.description||'')}</textarea></div>
+    <div class="field-row">
+      <div class="field"><label>Prix de vente</label><input id="prodPrice" type="number" min="0" value="${p.price||''}"></div>
+      <div class="field"><label>Prix de revient</label><input id="prodCost" type="number" min="0" value="${p.cost_price||''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Stock</label><input id="prodStock" type="number" min="0" value="${p.stock_qty||0}"></div>
+      <div class="field"><label>Statut</label><select id="prodStatus"><option value="draft" ${p.status==='draft'?'selected':''}>Brouillon</option><option value="active" ${p.status==='active'?'selected':''}>Actif</option></select></div>
+    </div>
+    <div class="field"><label>Image (URL)</label><input id="prodImage" value="${escapeHtml(p.image_url||'')}"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitProductForm('${p.id||''}')">Enregistrer</button></div>`);
+}
+function submitProductForm(id) {
+  const name = document.getElementById('prodName').value.trim();
+  if (!name) { document.getElementById('prodMsg').innerHTML = '<div class="msg error">Le nom est requis</div>'; return; }
+  const payload = {
+    boutique_id: CURRENT.id, name, description: document.getElementById('prodDesc').value.trim(),
+    price: Number(document.getElementById('prodPrice').value||0), cost_price: document.getElementById('prodCost').value,
+    stock_qty: Number(document.getElementById('prodStock').value||0), status: document.getElementById('prodStatus').value,
+    image_url: document.getElementById('prodImage').value.trim(),
+  };
+  const action = id ? '/products?action=update' : '/products?action=create';
+  if (id) payload.id = id;
+  post(action, payload).then(({data}) => {
+    if (!data.success) { document.getElementById('prodMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
+    closeModal(); route();
+  });
+}
+function deleteProduct(id) { if(!confirm('Supprimer ce produit ?')) return; post('/products?action=delete', {boutique_id:CURRENT.id, id}).then(()=>route()); }
+
+function renderStock(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/products?action=list&boutique_id='+bt.id).then(({data}) => {
+    const rows = data.data || [];
+    document.getElementById('content').innerHTML = `
+      <h2 class="page-title">Stock</h2><div class="page-sub">Ajustez les quantités en stock.</div>
+      <div class="card">${rows.length ? `<table><thead><tr><th>Produit</th><th>Stock actuel</th><th>Ajuster</th></tr></thead><tbody>
+        ${rows.map(p=>`<tr><td>${escapeHtml(p.name)}</td><td>${p.stock_qty}</td>
+          <td><button class="btn btn-ghost btn-sm" onclick="adjustStock('${p.id}',-1)">-1</button>
+              <button class="btn btn-ghost btn-sm" onclick="adjustStock('${p.id}',1)">+1</button>
+              <button class="btn btn-ghost btn-sm" onclick="adjustStockCustom('${p.id}')">Autre…</button></td></tr>`).join('')}
+        </tbody></table>` : '<div class="empty">Aucun produit.</div>'}</div>
+    `;
+  });
+}
+function adjustStock(id, delta) { post('/products?action=stock_adjust', {boutique_id:CURRENT.id, id, delta}).then(()=>route()); }
+function adjustStockCustom(id) { const v = prompt('Ajuster le stock de combien (ex: -5 ou 10) ?'); if (v===null || isNaN(Number(v))) return; adjustStock(id, Number(v)); }
+
+function renderSuppliers(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/products?action=suppliers_list&boutique_id='+bt.id).then(({data}) => {
+    const rows = data.data || [];
+    document.getElementById('content').innerHTML = `
+      <div class="row-between"><div><h2 class="page-title">Fournisseurs</h2></div><button class="btn btn-primary" onclick="openSupplierForm()">+ Nouveau fournisseur</button></div>
+      <div class="card">${rows.length ? `<table><thead><tr><th>Nom</th><th>Téléphone</th><th>Notes</th><th></th></tr></thead><tbody>
+        ${rows.map(s=>`<tr><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.phone||'')}</td><td>${escapeHtml(s.notes||'')}</td>
+          <td><button class="btn btn-danger btn-sm" onclick="deleteSupplier('${s.id}')">Suppr.</button></td></tr>`).join('')}
+        </tbody></table>` : '<div class="empty"><div class="big">🚛</div>Aucun fournisseur.</div>'}</div>
+    `;
+  });
+}
+function openSupplierForm() {
+  openModal(`<h2>Nouveau fournisseur</h2><div class="field"><label>Nom</label><input id="supName"></div>
+    <div class="field"><label>Téléphone</label><input id="supPhone"></div>
+    <div class="field"><label>Notes</label><textarea id="supNotes" rows="2"></textarea></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitSupplierForm()">Créer</button></div>`);
+}
+function submitSupplierForm() {
+  const name = document.getElementById('supName').value.trim(); if(!name) return;
+  post('/products?action=supplier_create', {boutique_id:CURRENT.id, name, phone:document.getElementById('supPhone').value.trim(), notes:document.getElementById('supNotes').value.trim()}).then(()=>{closeModal(); route();});
+}
+function deleteSupplier(id) { if(!confirm('Supprimer ce fournisseur ?')) return; post('/products?action=supplier_delete', {boutique_id:CURRENT.id, id}).then(()=>route()); }
+
+function renderSupplierOrders(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  Promise.all([api('/products?action=supplier_orders_list&boutique_id='+bt.id), api('/products?action=suppliers_list&boutique_id='+bt.id), api('/products?action=list&boutique_id='+bt.id)])
+    .then(([so, sup, prod]) => {
+      const rows = so.data.data || []; const suppliers = sup.data.data || []; const products = prod.data.data || [];
+      document.getElementById('content').innerHTML = `
+        <div class="row-between"><div><h2 class="page-title">Commandes fournisseurs</h2></div>
+          <button class="btn btn-primary" ${suppliers.length===0?'disabled title="Ajoutez un fournisseur d\'abord"':''} onclick="openSupplierOrderForm(${JSON.stringify(suppliers).replace(/"/g,'&quot;')},${JSON.stringify(products).replace(/"/g,'&quot;')})">+ Nouvelle commande</button></div>
+        <div class="card">${rows.length ? `<table><thead><tr><th>Fournisseur</th><th>Produit</th><th>Qté</th><th>Coût unitaire</th><th>Statut</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${escapeHtml(r.supplier_name)}</td><td>${escapeHtml(r.product_name||'—')}</td><td>${r.qty}</td><td>${fmtMoney(r.unit_cost, bt.currency)}</td>
+            <td>${pill(r.status==='received'?'delivered':(r.status==='cancelled'?'cancelled':'pending'))}</td>
+            <td>${r.status==='pending' ? '<button class="btn btn-ghost btn-sm" onclick="supplierOrderStatus(\''+r.id+'\',\'received\')">Reçue</button> <button class="btn btn-ghost btn-sm" onclick="supplierOrderStatus(\''+r.id+'\',\'cancelled\')">Annuler</button>' : ''}</td></tr>`).join('')}
+          </tbody></table>` : '<div class="empty">Aucune commande fournisseur.</div>'}</div>
+      `;
+    });
+}
+function openSupplierOrderForm(suppliers, products) {
+  openModal(`<h2>Nouvelle commande fournisseur</h2>
+    <div class="field"><label>Fournisseur</label><select id="soSupplier">${suppliers.map(s=>'<option value="'+s.id+'">'+escapeHtml(s.name)+'</option>').join('')}</select></div>
+    <div class="field"><label>Produit</label><select id="soProduct"><option value="">—</option>${products.map(p=>'<option value="'+p.id+'">'+escapeHtml(p.name)+'</option>').join('')}</select></div>
+    <div class="field-row"><div class="field"><label>Quantité</label><input id="soQty" type="number" min="1" value="1"></div><div class="field"><label>Coût unitaire</label><input id="soCost" type="number" min="0"></div></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitSupplierOrderForm()">Créer</button></div>`);
+}
+function submitSupplierOrderForm() {
+  post('/products?action=supplier_order_create', {boutique_id:CURRENT.id, supplier_id:document.getElementById('soSupplier').value,
+    product_id:document.getElementById('soProduct').value||null, qty:Number(document.getElementById('soQty').value||1), unit_cost:Number(document.getElementById('soCost').value||0)})
+    .then(()=>{closeModal(); route();});
+}
+function supplierOrderStatus(id, status) { post('/products?action=supplier_order_update_status', {boutique_id:CURRENT.id, id, status}).then(()=>route()); }
+
+// ============================================================
+// Analytique
+// ============================================================
+function renderReports(bt, period) {
+  period = period || '30d';
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/analytics?action=report&boutique_id='+bt.id+'&period='+period).then(({data}) => {
+    const R = data.data;
+    document.getElementById('content').innerHTML = `
+      <div class="row-between"><div><h2 class="page-title">Rapports de ventes</h2><div class="page-sub">Suivez les performances de votre boutique.</div></div>${periodSelectHtml('reportPeriod', period)}</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="lbl">Ventes brutes</div><div class="val">${fmtMoney(R.ventes_brutes, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">Commandes</div><div class="val">${R.commandes}</div></div>
+        <div class="kpi"><div class="lbl">Panier moyen</div><div class="val">${fmtMoney(R.panier_moyen, bt.currency)}</div></div>
+        <div class="kpi"><div class="lbl">Livrées</div><div class="val">${R.livrees}</div></div>
+      </div>
+      <div class="card"><h3>Décomposition</h3>
+        <table><tbody>
+          <tr><td>Ventes brutes</td><td>${fmtMoney(R.decomposition.ventes_brutes, bt.currency)}</td></tr>
+          <tr><td>Retours</td><td>-${fmtMoney(R.decomposition.retours, bt.currency)}</td></tr>
+          <tr><td>Ventes nettes</td><td>${fmtMoney(R.decomposition.ventes_nettes, bt.currency)}</td></tr>
+          <tr><td>Frais de livraison (client)</td><td>${fmtMoney(R.decomposition.frais_livraison, bt.currency)}</td></tr>
+          <tr><td><strong>Total</strong></td><td><strong>${fmtMoney(R.decomposition.total, bt.currency)}</strong></td></tr>
+        </tbody></table>
+      </div>
+      <div class="card"><h3>Meilleures ventes</h3>
+        ${R.best_sellers.length ? '<table><thead><tr><th>Produit</th><th>Qté</th><th>Revenu</th></tr></thead><tbody>'+R.best_sellers.map(p=>'<tr><td>'+escapeHtml(p.product_name||'—')+'</td><td>'+p.qty+'</td><td>'+fmtMoney(p.revenue,bt.currency)+'</td></tr>').join('')+'</tbody></table>' : '<div class="empty">Aucune donnée trouvée pour cette plage de dates.</div>'}
+      </div>
+      <div class="card"><h3>Données UTM (Meta, etc.)</h3>
+        ${R.utm.length ? '<table><thead><tr><th>Source</th><th>Campagne</th><th>Commandes</th><th>Ventes</th></tr></thead><tbody>'+R.utm.map(u=>'<tr><td>'+escapeHtml(u.utm_source||'—')+'</td><td>'+escapeHtml(u.utm_campaign||'—')+'</td><td>'+u.commandes+'</td><td>'+fmtMoney(u.ventes,bt.currency)+'</td></tr>').join('')+'</tbody></table>'
+        : '<div class="empty" style="text-align:left">Aucune donnée de campagne. Les commandes n\'atterrissent avec une campagne que si le lien de votre publicité porte des paramètres UTM. Dans Meta, renseignez le champ "Paramètres d\'URL" de votre publicité avec :<br><code>utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.id}}</code></div>'}
+      </div>
+    `;
+    window.__periodChange = p => renderReports(bt, p);
+  });
+}
+function renderLive(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  function load() {
+    api('/analytics?action=live&boutique_id='+bt.id).then(({data}) => {
+      const L = data.data;
+      document.getElementById('content').innerHTML = `
+        <div class="card" style="background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div><span style="background:rgba(255,255,255,.2);padding:3px 10px;border-radius:999px;font-size:12px">● EN DIRECT</span>
+              <h2 style="margin-top:8px">Activité en direct</h2></div>
+            <div style="font-size:13px">${new Date(L.server_time).toLocaleString('fr-FR')}</div>
+          </div>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi"><div class="lbl">Commandes aujourd'hui</div><div class="val">${L.commandes_aujourdhui}</div></div>
+          <div class="kpi"><div class="lbl">Revenus aujourd'hui</div><div class="val">${fmtMoney(L.revenus_aujourdhui, bt.currency)}</div></div>
+          <div class="kpi"><div class="lbl">Panier moyen</div><div class="val">${fmtMoney(L.panier_moyen, bt.currency)}</div></div>
+        </div>
+        <div class="card"><h3>Commandes récentes</h3>${renderOrdersTable(L.commandes_recentes, bt, true)}</div>
+        <div class="card"><h3>Flux d'activité</h3>${L.activite.length ? L.activite.map(a=>'<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px"><span class="muted">'+fmtDate(a.created_at)+'</span> — '+escapeHtml(a.message)+'</div>').join('') : '<div class="empty">Aucune commande pour l\'instant.</div>'}</div>
+      `;
+    });
+  }
+  load();
+  clearInterval(window.__liveInterval);
+  window.__liveInterval = setInterval(() => { if ((window.location.hash||'').endsWith('analytics/live')) load(); else clearInterval(window.__liveInterval); }, 30000);
+}
+
+// ============================================================
+// Marketing
+// ============================================================
+function renderMarketing(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  Promise.all([api('/marketing?action=newsletter&boutique_id='+bt.id), api('/marketing?action=messages&boutique_id='+bt.id)]).then(([nl, msg]) => {
+    const N = nl.data.data || []; const M = msg.data.data || [];
+    document.getElementById('content').innerHTML = `
+      <h2 class="page-title">Messages & abonnés</h2><div class="page-sub">Signups de la newsletter et messages du formulaire de contact de votre boutique.</div>
+      <div class="card"><h3>Abonnés newsletter (${N.length})</h3>
+        ${N.length ? '<table><thead><tr><th>Email</th><th>Inscrit le</th></tr></thead><tbody>'+N.map(n=>'<tr><td>'+escapeHtml(n.email)+'</td><td>'+fmtDate(n.created_at)+'</td></tr>').join('')+'</tbody></table>' : '<div class="empty">Aucun abonné pour le moment.</div>'}
+      </div>
+      <div class="card"><h3>Messages de contact (${M.length})</h3>
+        ${M.length ? '<table><thead><tr><th>Nom</th><th>Message</th><th>Date</th></tr></thead><tbody>'+M.map(m=>'<tr><td>'+escapeHtml(m.name||m.email||'—')+'</td><td>'+escapeHtml(m.message)+'</td><td>'+fmtDate(m.created_at)+'</td></tr>').join('')+'</tbody></table>' : '<div class="empty">Aucun message pour le moment.</div>'}
+      </div>
+    `;
+  });
+}
+
+// ============================================================
+// Paramètres
+// ============================================================
+function renderSettings(bt) {
+  document.getElementById('content').innerHTML = `
+    <h2 class="page-title">Paramètres</h2>
+    <div class="card">
+      <div id="settingsMsg"></div>
+      <div class="field"><label>Nom de la boutique</label><input id="setName" value="${escapeHtml(bt.name)}"></div>
+      <div class="field"><label>Lien public de la boutique</label><input value="store/index.html?b=${escapeHtml(bt.slug)}" readonly></div>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><input type="checkbox" id="setCod" ${bt.cod_enabled?'checked':''}> Paiement à la livraison activé</label>
+      <button class="btn btn-primary" onclick="saveSettings()">Enregistrer</button>
+    </div>
+  `;
+}
+function saveSettings() {
+  post('/boutiques?action=update', {id:CURRENT.id, name:document.getElementById('setName').value.trim(), cod_enabled:document.getElementById('setCod').checked}).then(({data}) => {
+    if (!data.success) { document.getElementById('settingsMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
+    document.getElementById('settingsMsg').innerHTML = '<div class="msg success">Enregistré</div>';
+    loadBoutiques();
+  });
+}
+</script>
+</body>
+</html>

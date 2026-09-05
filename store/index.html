@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boutique</title>
+<style>
+  :root{ --blue:#2563eb; --blue-dark:#1d4ed8; --ink:#0f172a; --gray:#64748b; --border:#e2e8f0; --bg:#f8fafc; --green:#16a34a; --green-bg:#ecfdf5; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:var(--ink);background:#fff}
+  a{color:inherit;text-decoration:none}
+  button,input,textarea{font-family:inherit}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+  header{border-bottom:1px solid var(--border);padding:16px 0;position:sticky;top:0;background:#fff;z-index:10}
+  header .bar{display:flex;align-items:center;justify-content:space-between}
+  .shop-name{font-weight:800;font-size:18px}
+  #cartBtn{position:relative;border:1px solid var(--border);background:#fff;border-radius:10px;padding:9px 14px;font-weight:600;cursor:pointer}
+  #cartCount{position:absolute;top:-8px;right:-8px;background:var(--blue);color:#fff;border-radius:999px;font-size:11px;padding:1px 6px}
+
+  .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px;padding:28px 0}
+  .product-card{border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;background:#fff;display:flex;flex-direction:column}
+  .product-card img{width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--bg)}
+  .product-card .ph{width:100%;aspect-ratio:1/1;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--gray)}
+  .product-card .body{padding:12px}
+  .product-card .name{font-weight:600;font-size:14px;margin-bottom:4px}
+  .product-card .price{font-weight:800;color:var(--blue)}
+
+  .empty{text-align:center;color:var(--gray);padding:80px 20px}
+  .empty .big{font-size:40px;margin-bottom:12px}
+
+  .overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:flex-end;justify-content:center;z-index:50}
+  .overlay.open{display:flex}
+  @media (min-width:640px){.overlay{align-items:center}}
+  .sheet{background:#fff;border-radius:18px 18px 0 0;max-width:520px;width:100%;max-height:92vh;overflow-y:auto;padding:24px;position:relative}
+  @media (min-width:640px){.sheet{border-radius:18px}}
+  .sheet .close{position:absolute;top:14px;right:16px;border:none;background:none;font-size:20px;cursor:pointer;color:var(--gray)}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  .field input,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px}
+  .btn{border:none;border-radius:10px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;width:100%}
+  .btn-primary{background:var(--blue);color:#fff}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+  .btn-ghost{background:#fff;color:var(--ink);border:1px solid var(--border)}
+  .qty-row{display:flex;align-items:center;gap:12px;margin:14px 0}
+  .qty-row button{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:16px;cursor:pointer}
+  .cart-line{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:14px}
+  .cart-line button{border:none;background:none;color:var(--gray);cursor:pointer;font-size:16px}
+  .cart-total{display:flex;justify-content:space-between;font-weight:800;font-size:16px;padding:14px 0}
+  .msg{font-size:13px;border-radius:10px;padding:9px 11px;margin-bottom:12px}
+  .msg.error{background:#fef2f2;color:#b91c1c}
+  .msg.success{background:var(--green-bg);color:#15803d}
+  .confirm-box{text-align:center;padding:20px 0}
+  .confirm-box .ic{width:54px;height:54px;border-radius:50%;background:var(--green-bg);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px}
+  footer{border-top:1px solid var(--border);padding:28px 0;margin-top:40px}
+  footer .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media (max-width:520px){footer .cols{grid-template-columns:1fr}}
+  footer h4{font-size:14px;margin-bottom:10px}
+  footer input,footer textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:9px;font-size:13px;margin-bottom:8px}
+  footer .btn{width:auto;padding:9px 16px}
+</style>
+</head>
+<body>
+<div id="root"><div class="empty">Chargement de la boutique…</div></div>
+
+<div class="overlay" id="productOverlay"><div class="sheet" id="productSheet"></div></div>
+<div class="overlay" id="cartOverlay"><div class="sheet" id="cartSheet"></div></div>
+
+<script src="../config.js"></script>
+<script>
+const API_URL = window.MYBOUTIK_API_URL || 'http://localhost:8000';
+// Le slug de la boutique se lit soit dans le chemin /store/{slug}, soit dans
+// ?b={slug} (fonctionne partout sans configuration serveur particuliere -
+// voir README.md pour activer les URLs "jolies" /store/{slug}).
+function getSlug() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('b')) return params.get('b');
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  const i = parts.indexOf('store');
+  if (i >= 0 && parts[i+1] && parts[i+1] !== 'index.html') return parts[i+1];
+  return '';
+}
+const SLUG = getSlug();
+function sessionId() {
+  let id = sessionStorage.getItem('myboutik_session');
+  if (!id) { id = 'sess_'+Math.random().toString(36).slice(2)+Date.now().toString(36); sessionStorage.setItem('myboutik_session', id); }
+  return id;
+}
+function api(path, opts) {
+  return fetch(API_URL+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}))
+    .then(r => r.json().then(data => ({status:r.status, data})))
+    .catch(() => ({status:0, data:{success:false, message:'Impossible de contacter le serveur.'}}));
+}
+function post(path, body) { return api(path, {method:'POST', body:JSON.stringify(body||{})}); }
+function fmtMoney(n, currency) { return Math.round(n||0).toLocaleString('fr-FR') + ' ' + (currency||'FCFA'); }
+function escapeHtml(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+let BOUTIQUE = null, PRODUCTS = [], CART = JSON.parse(sessionStorage.getItem('myboutik_cart')||'[]');
+
+function saveCart() { sessionStorage.setItem('myboutik_cart', JSON.stringify(CART)); renderCartCount(); }
+function renderCartCount() {
+  const n = CART.reduce((s,i)=>s+i.qty,0);
+  const el = document.getElementById('cartCount');
+  if (el) el.textContent = n;
+}
+
+if (!SLUG) {
+  document.getElementById('root').innerHTML = '<div class="empty"><div class="big">🏬</div>Boutique introuvable.<br><span style="font-size:13px">Ajoutez ?b=nom-de-la-boutique a l\'adresse.</span></div>';
+} else {
+  Promise.all([api('/shop?action=boutique&slug='+encodeURIComponent(SLUG)), api('/shop?action=products&slug='+encodeURIComponent(SLUG))]).then(([bt, prods]) => {
+    if (!bt.data.success) { document.getElementById('root').innerHTML = '<div class="empty"><div class="big">🏬</div>Boutique introuvable ou fermee.</div>'; return; }
+    BOUTIQUE = bt.data.data; PRODUCTS = prods.data.data || [];
+    document.title = BOUTIQUE.name;
+    renderShop();
+    post('/shop?action=track_visit', {slug:SLUG, session_id:sessionId(), path:window.location.pathname, referrer:document.referrer});
+  });
+}
+
+function renderShop() {
+  document.getElementById('root').innerHTML = `
+    <header><div class="wrap bar">
+      <div class="shop-name">${escapeHtml(BOUTIQUE.name)}</div>
+      <button id="cartBtn" onclick="openCart()">🛒 Panier<span id="cartCount">0</span></button>
+    </div></header>
+    <div class="wrap">
+      ${PRODUCTS.length ? '<div class="products-grid">'+PRODUCTS.map(p => `
+        <div class="product-card" onclick="openProduct('${p.id}')">
+          ${p.image_url ? '<img src="'+escapeHtml(p.image_url)+'" alt="">' : '<div class="ph">🛍️</div>'}
+          <div class="body"><div class="name">${escapeHtml(p.name)}</div><div class="price">${fmtMoney(p.price, BOUTIQUE.currency)}</div></div>
+        </div>`).join('')+'</div>'
+      : '<div class="empty"><div class="big">🛍️</div>Cette boutique n\'a pas encore de produits en ligne.</div>'}
+    </div>
+    <footer><div class="wrap cols">
+      <div>
+        <h4>Newsletter</h4>
+        <div id="nlMsg"></div>
+        <input id="nlEmail" type="email" placeholder="Votre email">
+        <button class="btn btn-primary" onclick="subscribeNewsletter()">S'inscrire</button>
+      </div>
+      <div>
+        <h4>Nous contacter</h4>
+        <div id="ctMsg"></div>
+        <input id="ctName" placeholder="Votre nom">
+        <input id="ctEmail" type="email" placeholder="Votre email">
+        <textarea id="ctMessage" rows="2" placeholder="Votre message"></textarea>
+        <button class="btn btn-primary" onclick="sendContactMessage()">Envoyer</button>
+      </div>
+    </div></footer>
+  `;
+  renderCartCount();
+}
+
+function openProduct(id) {
+  const p = PRODUCTS.find(x => x.id === id);
+  if (!p) return;
+  const hasVariants = p.variants && p.variants.length > 0;
+  document.getElementById('productSheet').innerHTML = `
+    <button class="close" onclick="closeOverlay('productOverlay')">✕</button>
+    ${p.image_url ? '<img src="'+escapeHtml(p.image_url)+'" style="width:100%;border-radius:12px;margin-bottom:14px;aspect-ratio:1/1;object-fit:cover">' : ''}
+    <h2>${escapeHtml(p.name)}</h2>
+    <p style="color:var(--gray);font-size:14px;margin:8px 0">${escapeHtml(p.description||'')}</p>
+    <div style="font-weight:800;font-size:20px;color:var(--blue)" id="pdPrice">${fmtMoney(p.price, BOUTIQUE.currency)}</div>
+    ${hasVariants ? '<div class="field"><label>Choix</label><select id="pdVariant" onchange="updateVariantPrice(\''+p.id+'\')"><option value="">Standard</option>'+
+      p.variants.map(v=>'<option value="'+v.id+'" data-price="'+(v.price??p.price)+'">'+escapeHtml(v.name)+'</option>').join('')+'</select></div>' : ''}
+    <div class="qty-row"><button onclick="stepQty(-1)">-</button><span id="pdQty">1</span><button onclick="stepQty(1)">+</button></div>
+    <button class="btn btn-primary" onclick="addToCart('${p.id}')">Ajouter au panier</button>
+  `;
+  document.getElementById('productOverlay').classList.add('open');
+  window.__pdQty = 1;
+}
+function stepQty(d) { window.__pdQty = Math.max(1, (window.__pdQty||1)+d); document.getElementById('pdQty').textContent = window.__pdQty; }
+function updateVariantPrice(productId) {
+  const p = PRODUCTS.find(x=>x.id===productId);
+  const sel = document.getElementById('pdVariant');
+  const price = sel.value ? Number(sel.selectedOptions[0].dataset.price) : p.price;
+  document.getElementById('pdPrice').textContent = fmtMoney(price, BOUTIQUE.currency);
+}
+function addToCart(productId) {
+  const p = PRODUCTS.find(x => x.id === productId);
+  const variantSel = document.getElementById('pdVariant');
+  const variantId = variantSel ? variantSel.value : '';
+  const variant = variantId ? p.variants.find(v=>v.id===variantId) : null;
+  const qty = window.__pdQty || 1;
+  const key = productId+'|'+(variantId||'');
+  const existing = CART.find(l => l.key === key);
+  if (existing) { existing.qty += qty; }
+  else { CART.push({key, product_id:productId, variant_id:variantId||null, name:p.name+(variant?' - '+variant.name:''), price:variant?(variant.price??p.price):p.price, qty}); }
+  saveCart();
+  closeOverlay('productOverlay');
+  openCart();
+}
+function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+
+function openCart() {
+  renderCartSheet();
+  document.getElementById('cartOverlay').classList.add('open');
+}
+function renderCartSheet(step) {
+  step = step || 'cart';
+  const total = CART.reduce((s,l)=>s+l.price*l.qty, 0);
+  if (step === 'cart') {
+    document.getElementById('cartSheet').innerHTML = `
+      <button class="close" onclick="closeOverlay('cartOverlay')">✕</button>
+      <h2>Votre panier</h2>
+      ${CART.length ? CART.map(l => `<div class="cart-line"><div>${escapeHtml(l.name)} × ${l.qty}<br><span style="color:var(--gray)">${fmtMoney(l.price,BOUTIQUE.currency)}</span></div><button onclick="removeFromCart('${l.key}')">✕</button></div>`).join('')
+        : '<div class="empty" style="padding:30px 0"><div class="big">🛒</div>Votre panier est vide.</div>'}
+      ${CART.length ? '<div class="cart-total"><div>Total</div><div>'+fmtMoney(total, BOUTIQUE.currency)+'</div></div><button class="btn btn-primary" onclick="renderCartSheet(\'checkout\')">Commander (paiement à la livraison)</button>' : ''}
+    `;
+    if (CART.length) trackAbandoned();
+  } else if (step === 'checkout') {
+    document.getElementById('cartSheet').innerHTML = `
+      <button class="close" onclick="closeOverlay('cartOverlay')">✕</button>
+      <h2>Vos informations</h2>
+      <div id="checkoutMsg"></div>
+      <div class="field"><label>Nom complet</label><input id="coName"></div>
+      <div class="field"><label>Téléphone</label><input id="coPhone" oninput="onCheckoutPhoneInput()"></div>
+      <div class="field"><label>Adresse de livraison</label><textarea id="coAddress" rows="2"></textarea></div>
+      <div class="cart-total"><div>Total</div><div>${fmtMoney(total, BOUTIQUE.currency)}</div></div>
+      <button class="btn btn-primary" id="coSubmitBtn" onclick="submitCheckout()">Confirmer la commande (paiement à la livraison)</button>
+      <button class="btn btn-ghost" style="margin-top:8px" onclick="renderCartSheet('cart')">← Retour au panier</button>
+    `;
+  } else if (step === 'confirm') {
+    document.getElementById('cartSheet').innerHTML = `
+      <button class="close" onclick="closeOverlay('cartOverlay')">✕</button>
+      <div class="confirm-box">
+        <div class="ic">✓</div>
+        <h2>Commande confirmée</h2>
+        <p style="color:var(--gray);margin-top:8px">Référence : <strong>${escapeHtml(window.__lastOrderRef||'')}</strong></p>
+        <p style="color:var(--gray)">Vous serez contacté(e) pour la livraison. Paiement à la réception.</p>
+        <button class="btn btn-primary" style="margin-top:16px" onclick="closeOverlay('cartOverlay')">Fermer</button>
+      </div>
+    `;
+  }
+}
+function removeFromCart(key) { CART = CART.filter(l => l.key !== key); saveCart(); renderCartSheet('cart'); }
+
+let abandonedTimer = null;
+function onCheckoutPhoneInput() {
+  clearTimeout(abandonedTimer);
+  abandonedTimer = setTimeout(trackAbandoned, 1200);
+}
+function trackAbandoned() {
+  const phone = (document.getElementById('coPhone')||{}).value || '';
+  if (!phone && CART.length === 0) return;
+  const total = CART.reduce((s,l)=>s+l.price*l.qty, 0);
+  post('/shop?action=track_abandoned', {slug:SLUG, session_id:sessionId(), phone, cart:CART, total});
+}
+
+function submitCheckout() {
+  const name = document.getElementById('coName').value.trim();
+  const phone = document.getElementById('coPhone').value.trim();
+  const address = document.getElementById('coAddress').value.trim();
+  if (!name || !phone) { document.getElementById('checkoutMsg').innerHTML = '<div class="msg error">Nom et téléphone requis</div>'; return; }
+  if (CART.length === 0) { document.getElementById('checkoutMsg').innerHTML = '<div class="msg error">Votre panier est vide</div>'; return; }
+  const btn = document.getElementById('coSubmitBtn'); btn.disabled = true; btn.textContent = 'Envoi en cours…';
+  const params = new URLSearchParams(window.location.search);
+  post('/shop?action=checkout', {
+    slug: SLUG, session_id: sessionId(),
+    customer: {name, phone, address},
+    items: CART.map(l => ({product_id:l.product_id, variant_id:l.variant_id, qty:l.qty})),
+    utm_source: params.get('utm_source')||'', utm_campaign: params.get('utm_campaign')||'',
+  }).then(({data}) => {
+    btn.disabled = false; btn.textContent = 'Confirmer la commande (paiement à la livraison)';
+    if (!data.success) { document.getElementById('checkoutMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
+    window.__lastOrderRef = data.data.ref;
+    CART = []; saveCart();
+    renderCartSheet('confirm');
+  });
+}
+
+function subscribeNewsletter() {
+  const email = document.getElementById('nlEmail').value.trim();
+  post('/shop?action=newsletter', {slug:SLUG, email}).then(({data}) => {
+    document.getElementById('nlMsg').innerHTML = '<div class="msg '+(data.success?'success':'error')+'">'+data.message+'</div>';
+    if (data.success) document.getElementById('nlEmail').value = '';
+  });
+}
+function sendContactMessage() {
+  const name = document.getElementById('ctName').value.trim();
+  const email = document.getElementById('ctEmail').value.trim();
+  const message = document.getElementById('ctMessage').value.trim();
+  post('/shop?action=contact_message', {slug:SLUG, name, email, message}).then(({data}) => {
+    document.getElementById('ctMsg').innerHTML = '<div class="msg '+(data.success?'success':'error')+'">'+data.message+'</div>';
+    if (data.success) { document.getElementById('ctName').value=''; document.getElementById('ctEmail').value=''; document.getElementById('ctMessage').value=''; }
+  });
+}
+</script>
+</body>
+</html>
