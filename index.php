@@ -579,7 +579,7 @@ function auth_register() {
        VALUES (?,?,?,?,?,NOW())",
       [$id, $email, password_hash($password, PASSWORD_DEFAULT), $fullName, $token]);
 
-    $verifyLink = auth_verify_link($token);
+    $verifyLink = auth_verify_link($token, $b['page_url'] ?? '');
     // Aucun envoi d'email reel branche pour l'instant (necessite une cle
     // d'un fournisseur transactionnel - Brevo/SendGrid/Resend/SMTP - a
     // fournir avant la mise en production). En attendant, le lien est
@@ -591,11 +591,20 @@ function auth_register() {
     ok($data, 'Compte cree. Verifiez votre email pour activer votre compte.', 201);
 }
 
-function auth_verify_link($token) {
+function auth_verify_link($token, $pageUrl = '') {
     // Construit un lien pointant vers la page d'accueil (index.html), qui
     // lit ?verify=TOKEN au chargement pour appeler auth?action=verify.
-    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-    $base = $origin ?: '';
+    // $pageUrl vient du frontend (window.location.href sans la query string)
+    // et inclut le sous-dossier eventuel (ex: /myboutik/ sur GitHub Pages) -
+    // l'en-tete Origin seul (repli si $pageUrl est absent/invalide) ne
+    // contient jamais ce sous-dossier, ce qui produirait un lien casse des
+    // que le site n'est pas a la racine du domaine.
+    $pageUrl = trim($pageUrl);
+    if ($pageUrl !== '' && preg_match('#^https?://#i', $pageUrl)) {
+        $base = rtrim(strtok($pageUrl, '?#'), '/');
+    } else {
+        $base = rtrim($_SERVER['HTTP_ORIGIN'] ?? '', '/');
+    }
     return $base.'/?verify='.$token;
 }
 
@@ -617,7 +626,7 @@ function auth_resend() {
     if ($user && !$user['email_verified_at']) {
         $token = bin2hex(random_bytes(24));
         q("UPDATE users SET verification_token=?, verification_sent_at=NOW() WHERE id=?", [$token, $user['id']]);
-        error_log('[MYBOUTIK] Lien de verification (renvoi) pour '.$email.' : '.auth_verify_link($token));
+        error_log('[MYBOUTIK] Lien de verification (renvoi) pour '.$email.' : '.auth_verify_link($token, bg('page_url','')));
     }
     ok(null, 'Si un compte existe avec cet email, un nouveau lien vient d\'etre envoye.');
 }

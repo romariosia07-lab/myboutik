@@ -183,7 +183,8 @@ function doRegister() {
   const email = document.getElementById('regEmail').value.trim();
   const password = document.getElementById('regPassword').value;
   setMsg('registerMsg','','');
-  api('/auth?action=register', {method:'POST', body:JSON.stringify({full_name,email,password})}).then(({data}) => {
+  const page_url = window.location.origin + window.location.pathname;
+  api('/auth?action=register', {method:'POST', body:JSON.stringify({full_name,email,password,page_url})}).then(({data}) => {
     if (!data.success) return setMsg('registerMsg', data.message, 'error');
     document.getElementById('pendingEmail').textContent = data.data.email;
     const devLink = document.getElementById('pendingDevLink');
@@ -199,7 +200,8 @@ function doRegister() {
 
 function resendVerification() {
   const email = document.getElementById('pendingEmail').textContent;
-  api('/auth?action=resend', {method:'POST', body:JSON.stringify({email})}).then(({data}) => {
+  const page_url = window.location.origin + window.location.pathname;
+  api('/auth?action=resend', {method:'POST', body:JSON.stringify({email,page_url})}).then(({data}) => {
     alert(data.message || 'Si un compte existe avec cet email, un nouveau lien vient d\'etre envoye.');
   });
 }
