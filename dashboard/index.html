@@ -427,7 +427,7 @@ function openNewOrder() {
       </div>
       <div class="field-row">
         <div class="field"><label>Quantité</label><input id="ordQty" type="number" min="1" value="1"></div>
-        <div class="field"><label>Frais de livraison</label><input id="ordDeliveryFee" type="number" min="0" value="0"></div>
+        <div class="field"><label>Frais de livraison</label><input id="ordDeliveryFee" type="number" min="0" value="${CURRENT.default_delivery_fee||0}"></div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
@@ -808,8 +808,43 @@ function openProductForm(p) {
       <div class="field"><label>Stock</label><input id="prodStock" type="number" min="0" value="${p.stock_qty||0}"></div>
       <div class="field"><label>Statut</label><select id="prodStatus"><option value="draft" ${p.status==='draft'?'selected':''}>Brouillon</option><option value="active" ${p.status==='active'?'selected':''}>Actif</option></select></div>
     </div>
-    <div class="field"><label>Image (URL)</label><input id="prodImage" value="${escapeHtml(p.image_url||'')}"></div>
+    <div class="field"><label>Photo du produit</label>
+      <input type="file" accept="image/*" onchange="handleProductImageFile(this)">
+      <div style="margin-top:8px">
+        <img id="prodImagePreview" src="${escapeHtml(p.image_url||'')}" style="max-width:120px;max-height:120px;border-radius:8px;display:${p.image_url?'block':'none'};object-fit:cover">
+      </div>
+      <input type="hidden" id="prodImage" value="${escapeHtml(p.image_url||'')}">
+    </div>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitProductForm('${p.id||''}')">Enregistrer</button></div>`);
+}
+// Redimensionne/compresse la photo cote navigateur (max 900px, JPEG 80%)
+// avant de la stocker en base64 directement dans products.image_url (colonne
+// TEXT, aucune limite pratique) - evite d'avoir a heberger les images
+// ailleurs (pas de compte S3/Cloudinary a configurer).
+function handleProductImageFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 900;
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else { w = Math.round(w * maxDim / h); h = maxDim; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      document.getElementById('prodImage').value = dataUrl;
+      const preview = document.getElementById('prodImagePreview');
+      preview.src = dataUrl; preview.style.display = 'block';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
 }
 function submitProductForm(id) {
   const name = document.getElementById('prodName').value.trim();
@@ -995,13 +1030,15 @@ function renderSettings(bt) {
       <div id="settingsMsg"></div>
       <div class="field"><label>Nom de la boutique</label><input id="setName" value="${escapeHtml(bt.name)}"></div>
       <div class="field"><label>Lien public de la boutique</label><input value="store/index.html?b=${escapeHtml(bt.slug)}" readonly></div>
+      <div class="field"><label>Frais de livraison par défaut (facturé au client)</label><input id="setDeliveryFee" type="number" min="0" value="${bt.default_delivery_fee||0}"></div>
       <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><input type="checkbox" id="setCod" ${bt.cod_enabled?'checked':''}> Paiement à la livraison activé</label>
       <button class="btn btn-primary" onclick="saveSettings()">Enregistrer</button>
     </div>
   `;
 }
 function saveSettings() {
-  post('/boutiques?action=update', {id:CURRENT.id, name:document.getElementById('setName').value.trim(), cod_enabled:document.getElementById('setCod').checked}).then(({data}) => {
+  post('/boutiques?action=update', {id:CURRENT.id, name:document.getElementById('setName').value.trim(), cod_enabled:document.getElementById('setCod').checked,
+    default_delivery_fee:Number(document.getElementById('setDeliveryFee').value||0)}).then(({data}) => {
     if (!data.success) { document.getElementById('settingsMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
     document.getElementById('settingsMsg').innerHTML = '<div class="msg success">Enregistré</div>';
     loadBoutiques();

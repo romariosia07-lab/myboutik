@@ -306,6 +306,11 @@ function route_install() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )",
     "CREATE INDEX IF NOT EXISTS idx_boutiques_owner ON boutiques(owner_user_id)",
+    // Ajoutee apres le premier lancement - frais de livraison applique
+    // automatiquement au panier du client sur la vitrine (voir shop_boutique()
+    // et store/index.html). ALTER...IF NOT EXISTS : sans danger a rejouer
+    // sur une base qui a deja ete installee.
+    "ALTER TABLE boutiques ADD COLUMN IF NOT EXISTS default_delivery_fee DECIMAL(14,2) DEFAULT 0",
     "CREATE TABLE IF NOT EXISTS products (
         id VARCHAR(36) PRIMARY KEY,
         boutique_id VARCHAR(36) NOT NULL,
@@ -707,7 +712,10 @@ function boutiques_update($pl) {
     $name = trim($b['name'] ?? $row['name']);
     $codEnabled = isset($b['cod_enabled']) ? (int)!!$b['cod_enabled'] : $row['cod_enabled'];
     $currency = trim($b['currency'] ?? $row['currency']);
-    q("UPDATE boutiques SET name=?, cod_enabled=?, currency=? WHERE id=?", [$name, $codEnabled, $currency, $id]);
+    $deliveryFee = isset($b['default_delivery_fee']) && $b['default_delivery_fee'] !== ''
+        ? max(0, (float)$b['default_delivery_fee']) : $row['default_delivery_fee'];
+    q("UPDATE boutiques SET name=?, cod_enabled=?, currency=?, default_delivery_fee=? WHERE id=?",
+      [$name, $codEnabled, $currency, $deliveryFee, $id]);
     ok(q("SELECT * FROM boutiques WHERE id=?", [$id])->fetch(), 'Boutique mise a jour');
 }
 
@@ -908,7 +916,7 @@ function route_shop($action) {
 }
 
 function public_boutique_by_slug($slug) {
-    $row = q("SELECT id,slug,name,currency,cod_enabled,status FROM boutiques WHERE slug=?", [$slug])->fetch();
+    $row = q("SELECT id,slug,name,currency,cod_enabled,default_delivery_fee,status FROM boutiques WHERE slug=?", [$slug])->fetch();
     if (!$row || $row['status'] !== 'active') fail('Boutique introuvable', 404);
     return $row;
 }
@@ -984,7 +992,10 @@ function shop_checkout() {
                 'product' => $product, 'variant' => $variant, 'qty' => $qty, 'unit_price' => $unitPrice,
             ];
         }
-        $deliveryFee = max(0, (float)($b['delivery_fee'] ?? 0));
+        // Le frais de livraison vient de la boutique (reglage marchand), pas
+        // du client - jamais du corps de la requete publique, pour eviter
+        // qu'un acheteur ne le mette a 0 lui-meme.
+        $deliveryFee = max(0, (float)$bt['default_delivery_fee']);
         $total = $subtotal + $deliveryFee;
 
         $orderId = uid();

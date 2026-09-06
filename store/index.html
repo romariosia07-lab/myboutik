@@ -196,14 +196,21 @@ function openCart() {
 }
 function renderCartSheet(step) {
   step = step || 'cart';
-  const total = CART.reduce((s,l)=>s+l.price*l.qty, 0);
+  const subtotal = CART.reduce((s,l)=>s+l.price*l.qty, 0);
+  const deliveryFee = Number(BOUTIQUE.default_delivery_fee || 0);
+  const total = subtotal + deliveryFee;
+  const totalsHtml = deliveryFee > 0
+    ? `<div class="cart-line"><div>Sous-total</div><div>${fmtMoney(subtotal, BOUTIQUE.currency)}</div></div>
+       <div class="cart-line"><div>Frais de livraison</div><div>${fmtMoney(deliveryFee, BOUTIQUE.currency)}</div></div>
+       <div class="cart-total"><div>Total</div><div>${fmtMoney(total, BOUTIQUE.currency)}</div></div>`
+    : `<div class="cart-total"><div>Total</div><div>${fmtMoney(total, BOUTIQUE.currency)}</div></div>`;
   if (step === 'cart') {
     document.getElementById('cartSheet').innerHTML = `
       <button class="close" onclick="closeOverlay('cartOverlay')">✕</button>
       <h2>Votre panier</h2>
       ${CART.length ? CART.map(l => `<div class="cart-line"><div>${escapeHtml(l.name)} × ${l.qty}<br><span style="color:var(--gray)">${fmtMoney(l.price,BOUTIQUE.currency)}</span></div><button onclick="removeFromCart('${l.key}')">✕</button></div>`).join('')
         : '<div class="empty" style="padding:30px 0"><div class="big">🛒</div>Votre panier est vide.</div>'}
-      ${CART.length ? '<div class="cart-total"><div>Total</div><div>'+fmtMoney(total, BOUTIQUE.currency)+'</div></div><button class="btn btn-primary" onclick="renderCartSheet(\'checkout\')">Commander (paiement à la livraison)</button>' : ''}
+      ${CART.length ? totalsHtml+'<button class="btn btn-primary" onclick="renderCartSheet(\'checkout\')">Commander (paiement à la livraison)</button>' : ''}
     `;
     if (CART.length) trackAbandoned();
   } else if (step === 'checkout') {
@@ -214,7 +221,7 @@ function renderCartSheet(step) {
       <div class="field"><label>Nom complet</label><input id="coName"></div>
       <div class="field"><label>Téléphone</label><input id="coPhone" oninput="onCheckoutPhoneInput()"></div>
       <div class="field"><label>Adresse de livraison</label><textarea id="coAddress" rows="2"></textarea></div>
-      <div class="cart-total"><div>Total</div><div>${fmtMoney(total, BOUTIQUE.currency)}</div></div>
+      ${totalsHtml}
       <button class="btn btn-primary" id="coSubmitBtn" onclick="submitCheckout()">Confirmer la commande (paiement à la livraison)</button>
       <button class="btn btn-ghost" style="margin-top:8px" onclick="renderCartSheet('cart')">← Retour au panier</button>
     `;
