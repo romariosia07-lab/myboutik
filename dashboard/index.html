@@ -908,9 +908,12 @@ function renderProductFormModal(p) {
 function renderOptionRows() {
   const rows = window.__optionRows;
   document.getElementById('optionRows').innerHTML = rows.map((r,i) => `
-    <div class="field-row" style="margin-bottom:8px">
+    <div class="field-row" style="margin-bottom:8px;align-items:start">
       <input placeholder="Ex: Taille" value="${escapeHtml(r.name)}" oninput="window.__optionRows[${i}].name=this.value">
-      <input placeholder="Ex: S, M, L" value="${escapeHtml((r.values||[]).join(', '))}" oninput="window.__optionRows[${i}].values=this.value.split(',').map(v=>v.trim()).filter(Boolean)">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;border:1px solid var(--border);border-radius:9px;padding:6px;min-height:20px">
+        ${(r.values||[]).map((v,vi)=>`<span style="background:var(--bg);border-radius:6px;padding:3px 8px;font-size:13px;display:inline-flex;align-items:center;gap:5px">${escapeHtml(v)}<button type="button" onclick="removeOptionTag(${i},${vi})" style="border:none;background:none;cursor:pointer;color:var(--gray);font-size:12px;line-height:1;padding:0">✕</button></span>`).join('')}
+        <input type="text" data-option-row="${i}" placeholder="Tape une valeur puis Entrée" style="border:none;outline:none;flex:1;min-width:120px;font-size:13px" onkeydown="handleOptionTagInput(event,${i})">
+      </div>
     </div>
   `).join('');
   document.getElementById('addOptionBtn').style.display = rows.length >= 3 ? 'none' : 'inline-block';
@@ -919,6 +922,36 @@ function addOptionRow() {
   if (window.__optionRows.length >= 3) return;
   window.__optionRows.push({name:'', values:[]});
   renderOptionRows();
+}
+// Etiquettes (tags) plutot qu'un champ texte libre "separe par des virgules"
+// - ambigu et source d'erreur (un merchant qui tape des espaces ou des
+// points-virgules se retrouvait avec une seule "valeur" fourre-tout au lieu
+// de plusieurs tailles/couleurs distinctes). Entree ou virgule valident une
+// etiquette, Retour arriere sur un champ vide supprime la derniere.
+function handleOptionTagInput(e, rowIndex) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = e.target.value.trim().replace(/,$/, '');
+    if (val) {
+      if (!window.__optionRows[rowIndex].values) window.__optionRows[rowIndex].values = [];
+      if (!window.__optionRows[rowIndex].values.includes(val)) window.__optionRows[rowIndex].values.push(val);
+      renderOptionRows();
+      focusOptionRowInput(rowIndex);
+    } else {
+      e.target.value = '';
+    }
+  } else if (e.key === 'Backspace' && e.target.value === '') {
+    const vals = window.__optionRows[rowIndex].values || [];
+    if (vals.length) { vals.pop(); renderOptionRows(); focusOptionRowInput(rowIndex); }
+  }
+}
+function removeOptionTag(rowIndex, tagIndex) {
+  window.__optionRows[rowIndex].values.splice(tagIndex, 1);
+  renderOptionRows();
+}
+function focusOptionRowInput(rowIndex) {
+  const input = document.querySelector('#optionRows input[data-option-row="'+rowIndex+'"]');
+  if (input) input.focus();
 }
 // Genere le produit cartesien des valeurs de chaque option (ex: Taille
 // S/M/L x Couleur Rouge/Bleu -> 6 variantes "S / Rouge", "S / Bleu", ...).
