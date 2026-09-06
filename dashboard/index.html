@@ -209,7 +209,7 @@ const NAV = [
   {group:'Catalogue', items:[['products','📦','Produits'], ['products/stock','📊','Stock'], ['products/suppliers','🚛','Fournisseurs'], ['products/supplier-orders','🧾','Commandes fournisseurs']]},
   {group:'Analytique', items:[['analytics/reports','📈','Rapports'], ['analytics/live','🔴','Live']]},
   {group:'Marketing', items:[['marketing','✉️','Messages et abonnés']]},
-  {group:'', items:[['settings','⚙️','Paramètres']]},
+  {group:'Paramètres', items:[['settings','⚙️','Général'], ['team','🧑‍🤝‍🧑','Équipe'], ['profile','👤','Mon profil'], ['billing','💳','Abonnement']]},
 ];
 function renderSidebar(bt, current) {
   document.getElementById('sideNav').innerHTML = NAV.map(g => (g.group ? '<div class="side-group">'+g.group+'</div>' : '') +
@@ -285,6 +285,7 @@ function renderSection(bt, section) {
     'products': renderProducts, 'products/stock': renderStock, 'products/suppliers': renderSuppliers, 'products/supplier-orders': renderSupplierOrders,
     'analytics/reports': renderReports, 'analytics/live': renderLive,
     'marketing': renderMarketing, 'settings': renderSettings,
+    'team': renderTeam, 'profile': renderProfile, 'billing': renderBilling,
   };
   (map[section] || renderHome)(bt);
 }
@@ -1242,23 +1243,161 @@ function renderMarketing(bt) {
 // ============================================================
 function renderSettings(bt) {
   document.getElementById('content').innerHTML = `
-    <h2 class="page-title">Paramètres</h2>
+    <h2 class="page-title">Général</h2>
     <div class="card">
       <div id="settingsMsg"></div>
       <div class="field"><label>Nom de la boutique</label><input id="setName" value="${escapeHtml(bt.name)}"></div>
+      <div class="field"><label>Description publique</label><textarea id="setDescription" rows="2">${escapeHtml(bt.description||'')}</textarea></div>
+      <div class="field"><label>Logo</label>
+        <input type="file" accept="image/*" onchange="handleLogoFile(this)">
+        <div style="margin-top:8px"><img id="setLogoPreview" src="${escapeHtml(bt.logo_url||'')}" style="max-width:100px;max-height:100px;border-radius:8px;display:${bt.logo_url?'block':'none'}"></div>
+        <input type="hidden" id="setLogo" value="${escapeHtml(bt.logo_url||'')}">
+      </div>
       <div class="field"><label>Lien public de la boutique</label><input value="store/index.html?b=${escapeHtml(bt.slug)}" readonly></div>
       <div class="field"><label>Frais de livraison par défaut (facturé au client)</label><input id="setDeliveryFee" type="number" min="0" value="${bt.default_delivery_fee||0}"></div>
       <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><input type="checkbox" id="setCod" ${bt.cod_enabled?'checked':''}> Paiement à la livraison activé</label>
       <button class="btn btn-primary" onclick="saveSettings()">Enregistrer</button>
     </div>
+    <div class="card">
+      <h3>Notifications de commande</h3>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><input type="checkbox" id="setNotifyEmail" ${bt.notify_order_email!=0?'checked':''}> Recevoir un email à chaque nouvelle commande</label>
+      <div class="field"><label>Adresse de réception (vide = email de votre compte)</label><input id="setNotifyAddr" type="email" value="${escapeHtml(bt.notify_email||'')}"></div>
+      <button class="btn btn-primary" onclick="saveSettings()">Enregistrer</button>
+    </div>
   `;
 }
+function handleLogoFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  resizeImageToDataUrl(file, 400, dataUrl => {
+    document.getElementById('setLogo').value = dataUrl;
+    const preview = document.getElementById('setLogoPreview');
+    preview.src = dataUrl; preview.style.display = 'block';
+  });
+}
 function saveSettings() {
-  post('/boutiques?action=update', {id:CURRENT.id, name:document.getElementById('setName').value.trim(), cod_enabled:document.getElementById('setCod').checked,
-    default_delivery_fee:Number(document.getElementById('setDeliveryFee').value||0)}).then(({data}) => {
+  post('/boutiques?action=update', {
+    id:CURRENT.id, name:document.getElementById('setName').value.trim(),
+    description:document.getElementById('setDescription').value.trim(),
+    logo_url:document.getElementById('setLogo').value.trim(),
+    cod_enabled:document.getElementById('setCod').checked,
+    default_delivery_fee:Number(document.getElementById('setDeliveryFee').value||0),
+    notify_order_email:document.getElementById('setNotifyEmail').checked,
+    notify_email:document.getElementById('setNotifyAddr').value.trim(),
+  }).then(({data}) => {
     if (!data.success) { document.getElementById('settingsMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
     document.getElementById('settingsMsg').innerHTML = '<div class="msg success">Enregistré</div>';
     loadBoutiques();
+  });
+}
+
+// ============================================================
+// Équipe
+// ============================================================
+const ROLE_LABELS = {owner:'Propriétaire', admin:'Admin', manager:'Manager', livreur:'Livreur', closeuse:'Closeuse', comptable:'Comptable'};
+function renderTeam(bt) {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/team?action=list&boutique_id='+bt.id).then(({data}) => {
+    if (!data.success) { document.getElementById('content').innerHTML = '<div class="card">'+escapeHtml(data.message)+'</div>'; return; }
+    const rows = data.data || [];
+    document.getElementById('content').innerHTML = `
+      <div class="row-between"><div><h2 class="page-title">Équipe</h2><div class="page-sub">Invitez des collègues à gérer la boutique avec vous. Chacun garde son propre compte.</div></div>
+        <button class="btn btn-primary" onclick="openInviteForm()">+ Inviter un membre</button></div>
+      <div class="card"><table><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th><th></th></tr></thead><tbody>
+        ${rows.map(m=>`<tr><td>${escapeHtml(m.full_name||'—')}</td><td>${escapeHtml(m.email)}</td><td>${ROLE_LABELS[m.role]||m.role}</td>
+          <td>${m.status==='active'?'<span class="pill pill-delivered">Actif</span>':'<span class="pill pill-pending">En attente</span>'}</td>
+          <td>${m.id?'<button class="btn btn-ghost btn-sm" onclick="removeTeamMember(\''+m.id+'\')">Retirer</button>':''}</td></tr>`).join('')}
+      </tbody></table></div>
+    `;
+  });
+}
+function openInviteForm() {
+  openModal(`<h2>Inviter un membre</h2>
+    <div id="inviteMsg"></div>
+    <div class="field"><label>Email</label><input id="inviteEmail" type="email" placeholder="collegue@exemple.com"></div>
+    <div class="field"><label>Rôle</label><select id="inviteRole">
+      <option value="admin">Admin — accès complet à toute la boutique</option>
+      <option value="manager" selected>Manager — tout sauf équipe et paramètres</option>
+      <option value="livreur">Livreur — voit les livraisons</option>
+      <option value="closeuse">Closeuse — commandes, clients, stock</option>
+      <option value="comptable">Comptable — finances et analytique</option>
+    </select></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitInvite()">Envoyer l'invitation</button></div>`);
+}
+function submitInvite() {
+  const email = document.getElementById('inviteEmail').value.trim();
+  if (!email) return;
+  post('/team?action=invite', {boutique_id:CURRENT.id, email, role:document.getElementById('inviteRole').value, page_url: window.location.origin + window.location.pathname.replace(/dashboard\/.*/, '')}).then(({data}) => {
+    if (!data.success) { document.getElementById('inviteMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
+    if (data.data && data.data.invite_link_dev_only) alert('Mode développement — lien direct : '+data.data.invite_link_dev_only);
+    closeModal(); route();
+  });
+}
+function removeTeamMember(id) {
+  if (!confirm('Retirer ce membre de la boutique ?')) return;
+  post('/team?action=remove', {boutique_id:CURRENT.id, id}).then(()=>route());
+}
+
+// ============================================================
+// Mon profil (niveau compte, pas boutique)
+// ============================================================
+function renderProfile() {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/auth?action=me').then(({data}) => {
+    const u = data.data;
+    document.getElementById('content').innerHTML = `
+      <h2 class="page-title">Mon profil</h2>
+      <div class="card">
+        <div id="profileMsg"></div>
+        <div class="field"><label>Nom complet</label><input id="profName" value="${escapeHtml(u.full_name||'')}"></div>
+        <div class="field"><label>Email</label><input value="${escapeHtml(u.email)}" readonly></div>
+        <div class="field"><label>Nouveau mot de passe (laisser vide pour ne pas changer)</label><input id="profPassword" type="password" placeholder="6 caractères minimum"></div>
+        <button class="btn btn-primary" onclick="saveProfile()">Enregistrer</button>
+      </div>
+    `;
+  });
+}
+function saveProfile() {
+  const payload = {full_name: document.getElementById('profName').value.trim()};
+  const pwd = document.getElementById('profPassword').value;
+  if (pwd) payload.new_password = pwd;
+  post('/auth?action=profile_update', payload).then(({data}) => {
+    if (!data.success) { document.getElementById('profileMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
+    document.getElementById('profileMsg').innerHTML = '<div class="msg success">Profil mis à jour</div>';
+    document.getElementById('profPassword').value = '';
+    USER.full_name = payload.full_name;
+    localStorage.setItem('myboutik_user', JSON.stringify(USER));
+  });
+}
+
+// ============================================================
+// Abonnement
+// ============================================================
+function renderBilling() {
+  document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
+  api('/billing?action=plans').then(({data}) => {
+    const B = data.data;
+    const plans = Object.entries(B.plans);
+    document.getElementById('content').innerHTML = `
+      <h2 class="page-title">Abonnement</h2>
+      <div class="page-sub">Plan actuel : <strong>${B.plans[B.current_plan]?.name || B.current_plan}</strong> ${B.plan_status==='active'?'<span class="pill pill-delivered">Actif</span>':'<span class="pill pill-pending">En attente</span>'}</div>
+      ${B.pending_request ? `<div class="card" style="background:var(--amber-bg);border-color:#fde68a">Demande en cours pour le plan <strong>${B.plans[B.pending_request.plan]?.name}</strong> — ${B.payment_instructions}</div>` : ''}
+      <div class="kpi-grid">
+        ${plans.map(([key,p]) => `
+          <div class="card" style="${key===B.current_plan?'border-color:var(--blue)':''}">
+            <h3>${p.name}</h3>
+            <div style="font-size:22px;font-weight:800;margin:8px 0">${fmtMoney(p.price)}<span class="muted" style="font-size:13px;font-weight:400">/mois</span></div>
+            <div class="muted" style="margin-bottom:14px">${p.boutique_limit} boutique(s)</div>
+            ${key===B.current_plan ? '<button class="btn btn-ghost btn-block" disabled>Plan actuel</button>' : '<button class="btn btn-primary btn-block" onclick="subscribeToPlan(\''+key+'\')">Choisir</button>'}
+          </div>`).join('')}
+      </div>
+    `;
+  });
+}
+function subscribeToPlan(plan) {
+  post('/billing?action=subscribe', {plan}).then(({data}) => {
+    alert(data.message);
+    if (data.success) renderBilling();
   });
 }
 </script>

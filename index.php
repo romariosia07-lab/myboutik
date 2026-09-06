@@ -43,6 +43,11 @@ define('JWT_EXPIRY', 43200); // 12h
 // que par un choix EXPLICITE.
 define('APP_ENV',   getenv('APP_ENV')   ?: 'production');
 define('APP_DEBUG', APP_ENV === 'development');
+// Mot de passe du panneau admin (validation manuelle des demandes
+// d'abonnement - voir route_admin()). Optionnel : contrairement a
+// JWT_SECRET, son absence ne bloque pas le demarrage de l'app, seules les
+// routes /admin repondent "non configure" tant qu'il n'est pas defini.
+define('ADMIN_PASSWORD', getenv('ADMIN_PASSWORD') ?: null);
 
 // CORS restreint : seules les origines listees ici peuvent appeler l'API
 // directement depuis un navigateur. A completer avec le(s) domaine(s) ou
@@ -206,8 +211,45 @@ const ENCAISSE_STATUSES = "('processing','shipped','delivered')";
 function require_boutique_owned($boutiqueId, $userId) {
     if (!$boutiqueId) fail('boutique_id manquant', 400);
     $row = q("SELECT * FROM boutiques WHERE id=? AND owner_user_id=?", [$boutiqueId, $userId])->fetch();
-    if (!$row) fail('Boutique introuvable', 404);
+    if ($row) { $row['_member_role'] = 'owner'; return $row; }
+    // Pas proprietaire : autorise si membre actif de l'equipe de cette
+    // boutique (voir route_team()). Meme fonction reutilisee partout plutot
+    // que de retoucher chaque module un par un.
+    $member = q("SELECT role FROM boutique_members WHERE boutique_id=? AND user_id=? AND status='active'", [$boutiqueId, $userId])->fetch();
+    if ($member) {
+        $row = q("SELECT * FROM boutiques WHERE id=?", [$boutiqueId])->fetch();
+        if ($row) { $row['_member_role'] = $member['role']; return $row; }
+    }
+    fail('Boutique introuvable', 404);
+}
+// Reserve les actions sensibles (parametres, gestion d'equipe) au
+// proprietaire et aux membres au role 'admin' - les autres roles (manager,
+// livreur, closeuse, comptable) gardent acces au reste de la boutique.
+function require_boutique_admin($boutiqueId, $userId) {
+    $row = require_boutique_owned($boutiqueId, $userId);
+    if (!in_array($row['_member_role'], ['owner','admin'], true)) {
+        fail('Action reservee au proprietaire ou a un administrateur de la boutique', 403);
+    }
     return $row;
+}
+
+// Plans d'abonnement (limite de boutiques par compte). Aucune passerelle de
+// paiement automatique branchee : un choix de plan cree une demande
+// (subscription_requests) verifiee manuellement par l'operateur de
+// MYBOUTIK via /admin (voir route_admin()) avant d'etre activee.
+const PLANS = [
+    'starter' => ['name'=>'Starter', 'price'=>8900,  'boutique_limit'=>1],
+    'pro'     => ['name'=>'Pro',     'price'=>14900, 'boutique_limit'=>3],
+    'premium' => ['name'=>'Premium', 'price'=>34900, 'boutique_limit'=>10],
+];
+
+// Point unique d'envoi d'email. Aucun fournisseur transactionnel branche
+// pour l'instant (voir README) : le contenu est journalise au lieu d'etre
+// envoye, comme deja fait pour les liens de verification. Brancher un vrai
+// envoi ici (Brevo/SendGrid/Resend/SMTP) active d'un coup la verification
+// de compte, les invitations d'equipe ET les notifications de commande.
+function send_email($to, $subject, $body) {
+    error_log('[MYBOUTIK] Email a envoyer -> '.$to.' | Sujet: '.$subject."\n".$body);
 }
 
 // Paliers de grade (gamification), calcules sur le cumul "vie" des revenus
@@ -267,6 +309,9 @@ try {
         case 'finance':   route_finance($action); break;
         case 'analytics': route_analytics($action); break;
         case 'marketing': route_marketing($action); break;
+        case 'team':      route_team($action); break;
+        case 'billing':   route_billing($action); break;
+        case 'admin':     route_admin($action); break;
         case 'health':    ok(['status'=>'up','time'=>date('c')]); break;
         default: fail('Module inconnu', 404);
     }
@@ -295,6 +340,23 @@ function route_install() {
         status VARCHAR(20) DEFAULT 'active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )",
+    // Plan/abonnement de la personne (pas de la boutique - un compte avec
+    // plusieurs boutiques n'a qu'un seul plan, voir PLANS plus bas).
+    // plan_status='pending' le temps qu'un paiement declare soit verifie
+    // manuellement (voir subscription_requests) - aucune passerelle de
+    // paiement automatique n'est branchee pour l'instant.
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(20) DEFAULT 'starter'",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_status VARCHAR(20) DEFAULT 'active'",
+    "CREATE TABLE IF NOT EXISTS subscription_requests (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        plan VARCHAR(20) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        reviewed_at TIMESTAMP
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_subreq_user ON subscription_requests(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_subreq_status ON subscription_requests(status)",
     "CREATE TABLE IF NOT EXISTS boutiques (
         id VARCHAR(36) PRIMARY KEY,
         owner_user_id VARCHAR(36) NOT NULL,
@@ -311,6 +373,28 @@ function route_install() {
     // et store/index.html). ALTER...IF NOT EXISTS : sans danger a rejouer
     // sur une base qui a deja ete installee.
     "ALTER TABLE boutiques ADD COLUMN IF NOT EXISTS default_delivery_fee DECIMAL(14,2) DEFAULT 0",
+    "ALTER TABLE boutiques ADD COLUMN IF NOT EXISTS description TEXT",
+    "ALTER TABLE boutiques ADD COLUMN IF NOT EXISTS logo_url TEXT",
+    "ALTER TABLE boutiques ADD COLUMN IF NOT EXISTS notify_order_email SMALLINT DEFAULT 1",
+    "ALTER TABLE boutiques ADD COLUMN IF NOT EXISTS notify_email VARCHAR(190)",
+    // Equipe : une boutique peut etre geree par plusieurs comptes MYBOUTIK
+    // distincts (le proprietaire + des membres invites par email). status
+    // reste 'pending' (avec un invite_token) tant que la personne invitee
+    // n'a pas un compte MYBOUTIK avec cette meme adresse et n'a pas
+    // confirme l'invitation - a ce moment user_id est rempli et status
+    // passe a 'active'.
+    "CREATE TABLE IF NOT EXISTS boutique_members (
+        id VARCHAR(36) PRIMARY KEY,
+        boutique_id VARCHAR(36) NOT NULL,
+        user_id VARCHAR(36),
+        email VARCHAR(190) NOT NULL,
+        role VARCHAR(20) NOT NULL DEFAULT 'manager',
+        invite_token VARCHAR(64),
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_boutiquemembers_boutique ON boutique_members(boutique_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_boutiquemembers_boutique_email ON boutique_members(boutique_id, email)",
     "CREATE TABLE IF NOT EXISTS products (
         id VARCHAR(36) PRIMARY KEY,
         boutique_id VARCHAR(36) NOT NULL,
@@ -605,6 +689,7 @@ function route_auth($action) {
         case 'resend':   auth_resend(); break;
         case 'login':    auth_login(); break;
         case 'me':       auth_me(); break;
+        case 'profile_update': auth_profile_update(); break;
         default: fail('Action inconnue', 404);
     }
 }
@@ -628,11 +713,7 @@ function auth_register() {
       [$id, $email, password_hash($password, PASSWORD_DEFAULT), $fullName, $token]);
 
     $verifyLink = auth_verify_link($token, $b['page_url'] ?? '');
-    // Aucun envoi d'email reel branche pour l'instant (necessite une cle
-    // d'un fournisseur transactionnel - Brevo/SendGrid/Resend/SMTP - a
-    // fournir avant la mise en production). En attendant, le lien est
-    // journalise cote serveur pour pouvoir tester le parcours complet.
-    error_log('[MYBOUTIK] Lien de verification pour '.$email.' : '.$verifyLink);
+    send_email($email, 'Verifiez votre email MYBOUTIK', "Cliquez sur ce lien pour activer votre compte :\n".$verifyLink);
 
     $data = ['email' => $email];
     if (APP_ENV === 'development') $data['verify_link_dev_only'] = $verifyLink;
@@ -674,7 +755,7 @@ function auth_resend() {
     if ($user && !$user['email_verified_at']) {
         $token = bin2hex(random_bytes(24));
         q("UPDATE users SET verification_token=?, verification_sent_at=NOW() WHERE id=?", [$token, $user['id']]);
-        error_log('[MYBOUTIK] Lien de verification (renvoi) pour '.$email.' : '.auth_verify_link($token, bg('page_url','')));
+        send_email($email, 'Verifiez votre email MYBOUTIK', "Cliquez sur ce lien pour activer votre compte :\n".auth_verify_link($token, bg('page_url','')));
     }
     ok(null, 'Si un compte existe avec cet email, un nouveau lien vient d\'etre envoye.');
 }
@@ -697,9 +778,22 @@ function auth_login() {
 
 function auth_me() {
     $pl = owner_auth();
-    $user = q("SELECT id,email,full_name,created_at FROM users WHERE id=?", [$pl['sub']])->fetch();
+    $user = q("SELECT id,email,full_name,plan,plan_status,created_at FROM users WHERE id=?", [$pl['sub']])->fetch();
     if (!$user) fail('Compte introuvable', 404);
     ok($user);
+}
+
+function auth_profile_update() {
+    $pl = owner_auth();
+    $b = body();
+    $user = q("SELECT * FROM users WHERE id=?", [$pl['sub']])->fetch();
+    $fullName = trim($b['full_name'] ?? $user['full_name']);
+    q("UPDATE users SET full_name=? WHERE id=?", [$fullName, $user['id']]);
+    if (!empty($b['new_password'])) {
+        if (strlen($b['new_password']) < 6) fail('Le nouveau mot de passe doit contenir au moins 6 caracteres');
+        q("UPDATE users SET password_hash=? WHERE id=?", [password_hash($b['new_password'], PASSWORD_DEFAULT), $user['id']]);
+    }
+    ok(null, 'Profil mis a jour');
 }
 
 // ============================================================
@@ -718,7 +812,14 @@ function route_boutiques($action) {
 }
 
 function boutiques_list($pl) {
-    $rows = q("SELECT * FROM boutiques WHERE owner_user_id=? ORDER BY created_at ASC", [$pl['sub']])->fetchAll();
+    // Les boutiques dont l'utilisateur est proprietaire ET celles ou il a
+    // ete ajoute comme membre d'equipe actif (voir require_boutique_owned).
+    $rows = q("SELECT b.*, 'owner' AS my_role FROM boutiques b WHERE b.owner_user_id=?
+               UNION
+               SELECT b.*, bm.role AS my_role FROM boutiques b
+               JOIN boutique_members bm ON bm.boutique_id=b.id
+               WHERE bm.user_id=? AND bm.status='active'
+               ORDER BY created_at ASC", [$pl['sub'], $pl['sub']])->fetchAll();
     foreach ($rows as &$r) {
         $r['stats'] = boutique_quick_stats($r['id']);
     }
@@ -736,6 +837,12 @@ function boutiques_create($pl) {
     $b = body();
     $name = trim($b['name'] ?? '');
     if ($name === '') fail('Le nom de la boutique est requis');
+    $user = q("SELECT plan FROM users WHERE id=?", [$pl['sub']])->fetch();
+    $limit = PLANS[$user['plan']]['boutique_limit'] ?? 1;
+    $count = (int)q("SELECT COUNT(*) c FROM boutiques WHERE owner_user_id=?", [$pl['sub']])->fetch()['c'];
+    if ($count >= $limit) {
+        fail('Limite de '.$limit.' boutique(s) atteinte pour votre plan '.PLANS[$user['plan']]['name'].'. Passez a un plan superieur pour en creer davantage.', 403);
+    }
     $slug = unique_boutique_slug(slugify($name));
     $id = uid();
     q("INSERT INTO boutiques (id,owner_user_id,slug,name) VALUES (?,?,?,?)", [$id, $pl['sub'], $slug, $name]);
@@ -751,14 +858,19 @@ function boutiques_create($pl) {
 function boutiques_update($pl) {
     $b = body();
     $id = $b['id'] ?? '';
-    $row = require_boutique_owned($id, $pl['sub']);
+    $row = require_boutique_admin($id, $pl['sub']);
     $name = trim($b['name'] ?? $row['name']);
     $codEnabled = isset($b['cod_enabled']) ? (int)!!$b['cod_enabled'] : $row['cod_enabled'];
     $currency = trim($b['currency'] ?? $row['currency']);
     $deliveryFee = isset($b['default_delivery_fee']) && $b['default_delivery_fee'] !== ''
         ? max(0, (float)$b['default_delivery_fee']) : $row['default_delivery_fee'];
-    q("UPDATE boutiques SET name=?, cod_enabled=?, currency=?, default_delivery_fee=? WHERE id=?",
-      [$name, $codEnabled, $currency, $deliveryFee, $id]);
+    $description = trim($b['description'] ?? $row['description']);
+    $logoUrl = trim($b['logo_url'] ?? $row['logo_url']);
+    $notifyOrderEmail = isset($b['notify_order_email']) ? (int)!!$b['notify_order_email'] : $row['notify_order_email'];
+    $notifyEmail = trim($b['notify_email'] ?? $row['notify_email']);
+    q("UPDATE boutiques SET name=?, cod_enabled=?, currency=?, default_delivery_fee=?, description=?, logo_url=?,
+       notify_order_email=?, notify_email=? WHERE id=?",
+      [$name, $codEnabled, $currency, $deliveryFee, $description, $logoUrl, $notifyOrderEmail, $notifyEmail, $id]);
     ok(q("SELECT * FROM boutiques WHERE id=?", [$id])->fetch(), 'Boutique mise a jour');
 }
 
@@ -1081,7 +1193,7 @@ function route_shop($action) {
 }
 
 function public_boutique_by_slug($slug) {
-    $row = q("SELECT id,slug,name,currency,cod_enabled,default_delivery_fee,status FROM boutiques WHERE slug=?", [$slug])->fetch();
+    $row = q("SELECT id,slug,name,description,logo_url,currency,cod_enabled,default_delivery_fee,status FROM boutiques WHERE slug=?", [$slug])->fetch();
     if (!$row || $row['status'] !== 'active') fail('Boutique introuvable', 404);
     return $row;
 }
@@ -1211,11 +1323,25 @@ function shop_checkout() {
 
         $pdo->commit();
         log_activity($bt['id'], 'Nouvelle commande '.$ref.' ('.$name.')');
+        notify_new_order($bt, $ref, $name, $total);
         ok(['ref'=>$ref, 'order_id'=>$orderId, 'total'=>$total], 'Commande enregistree', 201);
     } catch (Exception $e) {
         $pdo->rollBack();
         fail($e->getMessage(), 400);
     }
+}
+
+function notify_new_order($bt, $ref, $customerName, $total) {
+    $settings = q("SELECT notify_order_email, notify_email FROM boutiques WHERE id=?", [$bt['id']])->fetch();
+    if (!$settings || !$settings['notify_order_email']) return;
+    $to = $settings['notify_email'] ?: null;
+    if (!$to) {
+        $owner = q("SELECT u.email FROM users u JOIN boutiques b ON b.owner_user_id=u.id WHERE b.id=?", [$bt['id']])->fetch();
+        $to = $owner['email'] ?? null;
+    }
+    if (!$to) return;
+    send_email($to, 'Nouvelle commande '.$ref.' - '.$bt['name'],
+        "Client: $customerName\nTotal: $total ".($bt['currency'] ?: 'XOF')."\nReference: $ref\n\nOuvrez votre tableau de bord MYBOUTIK pour la traiter.");
 }
 
 function shop_track_visit() {
@@ -1944,4 +2070,161 @@ function marketing_message_mark_read($pl) {
     if (!$row) fail('Introuvable', 404);
     q("UPDATE contact_messages SET is_read=1 WHERE id=?", [$row['id']]);
     ok(null, 'Marque comme lu');
+}
+
+// ============================================================
+// EQUIPE — inviter des collegues sur une boutique (roles : admin, manager,
+// livreur, closeuse, comptable). Seuls le proprietaire et les membres
+// 'admin' peuvent gerer l'equipe (require_boutique_admin) ; les autres
+// roles ont pour l'instant le meme acces au reste de la boutique que
+// l'equipe existante - aucune restriction fine par page n'est encore
+// appliquee cote serveur au-dela des parametres/de l'equipe elle-meme.
+// ============================================================
+const TEAM_ROLES = ['admin','manager','livreur','closeuse','comptable'];
+
+function route_team($action) {
+    $pl = owner_auth();
+    switch ($action) {
+        case 'list':   team_list($pl); break;
+        case 'invite': team_invite($pl); break;
+        case 'remove': team_remove($pl); break;
+        case 'accept_invite': team_accept_invite($pl); break;
+        default: fail('Action inconnue', 404);
+    }
+}
+
+function team_invite_link($token, $pageUrl) {
+    $pageUrl = trim($pageUrl);
+    if ($pageUrl !== '' && preg_match('#^https?://#i', $pageUrl)) {
+        $base = rtrim(strtok($pageUrl, '?#'), '/');
+    } else {
+        $base = rtrim($_SERVER['HTTP_ORIGIN'] ?? '', '/');
+    }
+    return $base.'/?team_invite='.$token;
+}
+
+function team_list($pl) {
+    $bt = require_boutique_owned($_GET['boutique_id'] ?? '', $pl['sub']);
+    $rows = q("SELECT bm.id, bm.email, bm.role, bm.status, bm.created_at, u.full_name
+               FROM boutique_members bm LEFT JOIN users u ON u.id=bm.user_id
+               WHERE bm.boutique_id=? ORDER BY bm.created_at", [$bt['id']])->fetchAll();
+    $owner = q("SELECT email, full_name FROM users WHERE id=?", [$bt['owner_user_id']])->fetch();
+    array_unshift($rows, ['id'=>null, 'email'=>$owner['email'] ?? '', 'full_name'=>$owner['full_name'] ?? '', 'role'=>'owner', 'status'=>'active', 'created_at'=>null]);
+    ok($rows);
+}
+
+function team_invite($pl) {
+    $b = body();
+    $bt = require_boutique_admin($b['boutique_id'] ?? '', $pl['sub']);
+    $email = strtolower(trim($b['email'] ?? ''));
+    $role = $b['role'] ?? 'manager';
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) fail('Adresse email invalide');
+    if (!in_array($role, TEAM_ROLES, true)) fail('Role invalide');
+    $existing = q("SELECT id FROM boutique_members WHERE boutique_id=? AND email=?", [$bt['id'], $email])->fetch();
+    if ($existing) fail('Ce membre est deja invite sur cette boutique', 409);
+    $token = bin2hex(random_bytes(24));
+    $id = uid();
+    q("INSERT INTO boutique_members (id,boutique_id,email,role,invite_token,status) VALUES (?,?,?,?,?,'pending')",
+      [$id, $bt['id'], $email, $role, $token]);
+    $link = team_invite_link($token, $b['page_url'] ?? '');
+    send_email($email, 'Invitation a rejoindre '.$bt['name'].' sur MYBOUTIK',
+        "Vous avez ete invite(e) a gerer la boutique ".$bt['name']." avec le role \"$role\".\n".
+        "Connectez-vous (ou creez un compte avec cette meme adresse email) puis ouvrez ce lien :\n".$link);
+    $data = ['id'=>$id];
+    if (APP_ENV === 'development') $data['invite_link_dev_only'] = $link;
+    ok($data, 'Invitation envoyee', 201);
+}
+
+function team_remove($pl) {
+    $b = body();
+    $bt = require_boutique_admin($b['boutique_id'] ?? '', $pl['sub']);
+    q("DELETE FROM boutique_members WHERE id=? AND boutique_id=?", [$b['id'] ?? '', $bt['id']]);
+    ok(null, 'Membre retire');
+}
+
+function team_accept_invite($pl) {
+    $token = bg('token');
+    if (!$token) fail('Token manquant');
+    $member = q("SELECT * FROM boutique_members WHERE invite_token=? AND status='pending'", [$token])->fetch();
+    if (!$member) fail('Invitation invalide ou deja utilisee', 404);
+    $user = q("SELECT email FROM users WHERE id=?", [$pl['sub']])->fetch();
+    if (strtolower($user['email']) !== strtolower($member['email'])) {
+        fail('Cette invitation est destinee a une autre adresse email', 403);
+    }
+    q("UPDATE boutique_members SET user_id=?, status='active', invite_token=NULL WHERE id=?", [$pl['sub'], $member['id']]);
+    ok(null, 'Invitation acceptee');
+}
+
+// ============================================================
+// ABONNEMENT — plans/limites de boutiques. Aucune passerelle de paiement
+// automatique : choisir un plan cree une demande verifiee manuellement par
+// l'operateur de MYBOUTIK (voir route_admin()).
+// ============================================================
+function route_billing($action) {
+    $pl = owner_auth();
+    switch ($action) {
+        case 'plans':     billing_plans($pl); break;
+        case 'subscribe': billing_subscribe($pl); break;
+        default: fail('Action inconnue', 404);
+    }
+}
+
+function billing_plans($pl) {
+    $user = q("SELECT plan, plan_status FROM users WHERE id=?", [$pl['sub']])->fetch();
+    $pending = q("SELECT * FROM subscription_requests WHERE user_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1", [$pl['sub']])->fetch();
+    ok([
+        'plans' => PLANS, 'current_plan' => $user['plan'], 'plan_status' => $user['plan_status'],
+        'pending_request' => $pending ?: null,
+        'payment_instructions' => 'Envoyez le montant du plan choisi par Mobile Money au numero communique par l\'equipe MYBOUTIK, puis cliquez sur "J\'ai paye". Votre plan est active apres verification manuelle.',
+    ]);
+}
+
+function billing_subscribe($pl) {
+    $b = body();
+    $plan = $b['plan'] ?? '';
+    if (!isset(PLANS[$plan])) fail('Plan invalide');
+    $existing = q("SELECT id FROM subscription_requests WHERE user_id=? AND plan=? AND status='pending'", [$pl['sub'], $plan])->fetch();
+    if ($existing) { ok(null, 'Demande deja en attente de verification'); }
+    $id = uid();
+    q("INSERT INTO subscription_requests (id,user_id,plan) VALUES (?,?,?)", [$id, $pl['sub'], $plan]);
+    ok(null, 'Demande enregistree. Votre plan sera active des verification du paiement par l\'equipe MYBOUTIK.', 201);
+}
+
+// ============================================================
+// ADMIN — panneau reserve a l'operateur de MYBOUTIK (mot de passe distinct
+// des comptes marchands), pour valider les demandes d'abonnement. Pas de
+// JWT ici : le mot de passe est verifie a chaque appel, comme le panel
+// admin de ROM_MONEY.
+// ============================================================
+function route_admin($action) {
+    if (!ADMIN_PASSWORD) fail('Panneau admin non configure (variable ADMIN_PASSWORD absente)', 503);
+    rate_limit_check('admin_auth', 30, 300);
+    $password = bg('password', '');
+    if (!hash_equals(ADMIN_PASSWORD, (string)$password)) fail('Mot de passe incorrect', 403);
+    switch ($action) {
+        case 'subscription_requests': admin_subscription_requests(); break;
+        case 'subscription_approve':  admin_subscription_approve(); break;
+        case 'subscription_reject':   admin_subscription_reject(); break;
+        default: fail('Action inconnue', 404);
+    }
+}
+
+function admin_subscription_requests() {
+    ok(q("SELECT sr.*, u.email FROM subscription_requests sr JOIN users u ON u.id=sr.user_id
+          WHERE sr.status='pending' ORDER BY sr.created_at ASC")->fetchAll());
+}
+
+function admin_subscription_approve() {
+    $b = body();
+    $req = q("SELECT * FROM subscription_requests WHERE id=?", [$b['id'] ?? ''])->fetch();
+    if (!$req) fail('Demande introuvable', 404);
+    q("UPDATE users SET plan=?, plan_status='active' WHERE id=?", [$req['plan'], $req['user_id']]);
+    q("UPDATE subscription_requests SET status='approved', reviewed_at=NOW() WHERE id=?", [$req['id']]);
+    ok(null, 'Plan active');
+}
+
+function admin_subscription_reject() {
+    $b = body();
+    q("UPDATE subscription_requests SET status='rejected', reviewed_at=NOW() WHERE id=?", [$b['id'] ?? '']);
+    ok(null, 'Demande rejetee');
 }

@@ -54,6 +54,9 @@ base).
      local sans SSL configuré.
    - `JWT_SECRET` — chaîne aléatoire longue (ex: générée avec `openssl rand -hex 32`). **Obligatoire**, l'app refuse de démarrer sans.
    - `INSTALL_KEY` — optionnel, sinon `JWT_SECRET` est réutilisée pour protéger `/install`.
+   - `ADMIN_PASSWORD` — optionnel, protège `admin.html` (validation manuelle
+     des demandes d'abonnement). Sans elle, `admin.html` répond juste
+     "panneau non configuré" — pas de risque à la laisser absente au début.
    - `APP_ENV` — laissez absent ou mettez `production` en ligne. Ne mettez `development` qu'en local.
 4. Une fois déployé, initialisez les tables en visitant :
    `https://votre-backend.example.com/install?key=VOTRE_INSTALL_KEY`
@@ -123,6 +126,25 @@ dans le message de la page (mode développement) ou dans les logs du serveur
 PHP, connectez-vous, créez une boutique, ajoutez un produit, ouvrez
 `store/index.html?b=votre-slug` dans un autre onglet et passez une commande
 en paiement à la livraison.
+
+## Abonnement et équipe
+
+- **Abonnement** : `Starter`/`Pro`/`Premium` limitent le nombre de boutiques
+  par compte (voir `PLANS` dans `index.php`). Choisir un plan crée une
+  *demande* — aucune passerelle de paiement n'est branchée, le paiement se
+  fait manuellement (Mobile Money) puis vous l'approuvez via `admin.html`
+  (protégé par `ADMIN_PASSWORD`), ce qui active le plan sur le compte.
+- **Équipe** : le propriétaire d'une boutique peut inviter des collègues par
+  email avec un rôle (admin, manager, livreur, closeuse, comptable). La
+  personne invitée doit avoir (ou créer) un compte MYBOUTIK avec la **même
+  adresse email**, puis ouvrir le lien d'invitation pour rejoindre la
+  boutique. Seuls le propriétaire et les membres `admin` peuvent gérer les
+  paramètres et l'équipe ; les autres rôles ont pour l'instant le même accès
+  au reste de la boutique que n'importe quel membre (pas encore de
+  restriction fine page par page pour Livreur/Comptable/Closeuse).
+- L'envoi réel des invitations et des notifications de commande passe par
+  la même fonction `send_email()` que la vérification de compte — brancher
+  un fournisseur transactionnel une fois active les trois d'un coup.
 
 ## Hors périmètre de cette version (voir le plan initial)
 

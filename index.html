@@ -166,6 +166,18 @@ function setMsg(id, text, type) {
   el.innerHTML = text ? '<div class="msg '+type+'">'+text+'</div>' : '';
 }
 
+// Si l'URL contient ?team_invite=TOKEN (lien envoye par un proprietaire de
+// boutique), on rejoint automatiquement l'equipe juste apres connexion -
+// que la personne ait deja un compte ou vienne d'en creer un (elle passe de
+// toute facon par la connexion a la fin des deux parcours).
+function acceptTeamInviteIfPresent(token) {
+  const inviteToken = new URLSearchParams(window.location.search).get('team_invite');
+  if (!inviteToken) return Promise.resolve();
+  return fetch(API_URL+'/team?action=accept_invite', {
+    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+    body: JSON.stringify({token: inviteToken}),
+  }).catch(() => {});
+}
 function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value;
@@ -174,7 +186,7 @@ function doLogin() {
     if (!data.success) return setMsg('loginMsg', data.message, 'error');
     localStorage.setItem('myboutik_token', data.data.token);
     localStorage.setItem('myboutik_user', JSON.stringify(data.data.user));
-    window.location.href = 'dashboard/index.html';
+    acceptTeamInviteIfPresent(data.data.token).then(() => { window.location.href = 'dashboard/index.html'; });
   });
 }
 
@@ -217,9 +229,14 @@ function checkVerifyToken() {
 }
 checkVerifyToken();
 
-// Deja connecte ? on evite de re-proposer la page marketing.
+// Deja connecte ? on evite de re-proposer la page marketing (mais on traite
+// d'abord une invitation d'equipe presente dans l'URL, le cas echeant).
 if (localStorage.getItem('myboutik_token') && !new URLSearchParams(window.location.search).get('verify')) {
-  window.location.href = 'dashboard/index.html';
+  acceptTeamInviteIfPresent(localStorage.getItem('myboutik_token')).then(() => { window.location.href = 'dashboard/index.html'; });
+}
+if (new URLSearchParams(window.location.search).get('team_invite') && !localStorage.getItem('myboutik_token')) {
+  openAuth('login');
+  setMsg('loginMsg', 'Vous avez ete invite(e) a rejoindre une boutique. Connectez-vous (ou creez un compte avec la meme adresse email) pour la rejoindre automatiquement.', 'success');
 }
 </script>
 </body>

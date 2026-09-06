@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MYBOUTIK — Admin</title>
+<style>
+  :root{ --blue:#2563eb; --ink:#0f172a; --gray:#64748b; --border:#e2e8f0; --bg:#f8fafc; --amber-bg:#fffbeb; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg);padding:24px}
+  .wrap{max-width:720px;margin:0 auto}
+  h1{font-size:20px;margin-bottom:16px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+  input{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:9px;font-size:14px;margin-bottom:10px}
+  button{border:none;border-radius:9px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer;background:var(--blue);color:#fff}
+  button.ghost{background:#fff;color:var(--ink);border:1px solid var(--border)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--border)}
+  .msg{font-size:13px;padding:8px 10px;border-radius:8px;background:#fef2f2;color:#b91c1c;margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MYBOUTIK — Panneau admin</h1>
+  <div class="card" id="loginCard">
+    <div id="loginMsg"></div>
+    <input type="password" id="adminPassword" placeholder="Mot de passe admin (ADMIN_PASSWORD)">
+    <button onclick="loadRequests()">Se connecter</button>
+  </div>
+  <div class="card" id="listCard" style="display:none">
+    <h3 style="margin-bottom:12px">Demandes d'abonnement en attente</h3>
+    <div id="listBody"></div>
+  </div>
+</div>
+<script src="config.js"></script>
+<script>
+const API_URL = window.MYBOUTIK_API_URL || 'http://localhost:8000';
+function loadRequests() {
+  const password = document.getElementById('adminPassword').value;
+  fetch(API_URL+'/admin?action=subscription_requests', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password})})
+    .then(r => r.json()).then(data => {
+      if (!data.success) { document.getElementById('loginMsg').innerHTML = '<div class="msg">'+data.message+'</div>'; return; }
+      sessionStorage.setItem('myboutik_admin_pw', password);
+      document.getElementById('loginCard').style.display = 'none';
+      document.getElementById('listCard').style.display = 'block';
+      renderList(data.data);
+    }).catch(() => { document.getElementById('loginMsg').innerHTML = '<div class="msg">Impossible de contacter le serveur.</div>'; });
+}
+function renderList(rows) {
+  document.getElementById('listBody').innerHTML = rows.length ? `<table><thead><tr><th>Email</th><th>Plan</th><th>Date</th><th></th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${r.email}</td><td>${r.plan}</td><td>${new Date(r.created_at).toLocaleString('fr-FR')}</td>
+      <td><button onclick="review('${r.id}','subscription_approve')">Approuver</button>
+          <button class="ghost" onclick="review('${r.id}','subscription_reject')">Rejeter</button></td></tr>`).join('')}
+    </tbody></table>` : '<p style="color:var(--gray)">Aucune demande en attente.</p>';
+}
+function review(id, action) {
+  const password = sessionStorage.getItem('myboutik_admin_pw');
+  fetch(API_URL+'/admin?action='+action, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password, id})})
+    .then(r => r.json()).then(() => loadRequests());
+}
+if (sessionStorage.getItem('myboutik_admin_pw')) {
+  document.getElementById('adminPassword').value = sessionStorage.getItem('myboutik_admin_pw');
+  loadRequests();
+}
+</script>
+</body>
+</html>

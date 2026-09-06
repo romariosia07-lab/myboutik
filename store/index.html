@@ -127,10 +127,14 @@ if (!SLUG) {
 function renderShop() {
   document.getElementById('root').innerHTML = `
     <header><div class="wrap bar">
-      <div class="shop-name">${escapeHtml(BOUTIQUE.name)}</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        ${BOUTIQUE.logo_url ? '<img src="'+escapeHtml(BOUTIQUE.logo_url)+'" style="width:36px;height:36px;border-radius:8px;object-fit:cover">' : ''}
+        <div class="shop-name">${escapeHtml(BOUTIQUE.name)}</div>
+      </div>
       <button id="cartBtn" onclick="openCart()">🛒 Panier<span id="cartCount">0</span></button>
     </div></header>
     <div class="wrap">
+      ${BOUTIQUE.description ? '<p style="color:var(--gray);margin:16px 0 0">'+escapeHtml(BOUTIQUE.description)+'</p>' : ''}
       ${PRODUCTS.length ? '<div class="products-grid">'+PRODUCTS.map(p => `
         <div class="product-card" onclick="openProduct('${p.id}')">
           ${p.image_url ? '<img src="'+escapeHtml(p.image_url)+'" alt="">' : '<div class="ph">🛍️</div>'}
