@@ -98,9 +98,11 @@ let BOUTIQUE = null, PRODUCTS = [], CART = JSON.parse(sessionStorage.getItem('my
 
 function saveCart() { sessionStorage.setItem('myboutik_cart', JSON.stringify(CART)); renderCartCount(); }
 function renderCartCount() {
-  const n = CART.reduce((s,i)=>s+i.qty,0);
+  // Nombre d'articles differents dans le panier (pas la somme des
+  // quantites) - correspond a ce que le client voit en ouvrant le panier :
+  // 2 produits ajoutes, meme a 2 exemplaires chacun, affiche "2".
   const el = document.getElementById('cartCount');
-  if (el) el.textContent = n;
+  if (el) el.textContent = CART.length;
 }
 
 if (!SLUG) {
@@ -191,7 +193,6 @@ function openProduct(id) {
     <p style="color:var(--gray);font-size:14px;margin:8px 0">${escapeHtml(p.description||'')}</p>
     <div id="pdPrice">${renderPriceHtml(p.price, p.compare_at_price)}</div>
     ${variantHtml}
-    <div id="pdAvailability" style="font-size:13px;margin:4px 0 0"></div>
     <div class="qty-row"><button onclick="stepQty(-1)">-</button><span id="pdQty">1</span><button onclick="stepQty(1)">+</button></div>
     <button class="btn btn-primary" id="pdAddBtn" onclick="addToCart('${p.id}')">Ajouter au panier</button>
   `;
@@ -227,21 +228,13 @@ function resolveVariantSelection(productId) {
   window.__pdResolvedVariant = variant || null;
   const price = variant && variant.price != null ? Number(variant.price) : Number(p.price);
   document.getElementById('pdPrice').innerHTML = renderPriceHtml(price, variant ? null : p.compare_at_price);
-  const availEl = document.getElementById('pdAvailability');
+  // Le stock ne bloque jamais la commande cote acheteur (a charge du
+  // marchand de s'organiser une fois la commande recue - voir l'alerte de
+  // stock bas cote tableau de bord). Seule une combinaison qui n'existe
+  // tout simplement pas (aucune variante generee pour ce choix precis, donc
+  // aucun prix a facturer) empeche l'ajout au panier.
   const addBtn = document.getElementById('pdAddBtn');
-  if (!variant) {
-    availEl.innerHTML = '<span style="color:var(--gray)">Cette combinaison n\'est pas disponible.</span>';
-    addBtn.disabled = true;
-  } else if (Number(variant.stock_qty) <= 0 && Number(p.track_inventory) && !Number(p.allow_backorder)) {
-    availEl.innerHTML = '<span style="color:#b91c1c">Rupture de stock pour cette combinaison.</span>';
-    addBtn.disabled = true;
-  } else if (Number(variant.stock_qty) <= 0 && Number(p.allow_backorder)) {
-    availEl.innerHTML = '<span style="color:var(--gray)">Disponible en précommande.</span>';
-    addBtn.disabled = false;
-  } else {
-    availEl.innerHTML = '';
-    addBtn.disabled = false;
-  }
+  addBtn.disabled = !variant;
 }
 function addToCart(productId) {
   const p = PRODUCTS.find(x => x.id === productId);

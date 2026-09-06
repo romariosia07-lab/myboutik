@@ -341,6 +341,12 @@ function route_install() {
     // generateur avec les memes lignes plutot que de les reconstruire a
     // partir des noms de variantes deja crees.
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS options_json TEXT",
+    // Une commande n'est plus jamais bloquee par manque de stock (au
+    // marchand de gerer un stock insuffisant une fois la commande vue,
+    // pas a l'acheteur de s'en rendre compte au moment de payer) - a la
+    // place, le marchand definit lui-meme un seuil pour etre alerte quand
+    // le stock d'un produit devient bas.
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS low_stock_threshold INT DEFAULT 5",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_boutique_slug ON products(boutique_id, slug) WHERE slug IS NOT NULL AND slug <> ''",
     // Galerie de photos (plusieurs images par produit). products.image_url
     // reste en place et reflete toujours l'image marquee is_primary=1 ici -
@@ -842,8 +848,8 @@ function products_create($pl) {
     $optionsJson = trim($b['options_json'] ?? '');
     if ($optionsJson !== '' && json_decode($optionsJson) === null) $optionsJson = '';
     q("INSERT INTO products (id,boutique_id,name,description,price,compare_at_price,cost_price,stock_qty,
-       image_url,status,sku,barcode,slug,track_inventory,allow_backorder,is_physical,delivery_fee,options_json)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+       image_url,status,sku,barcode,slug,track_inventory,allow_backorder,is_physical,delivery_fee,options_json,low_stock_threshold)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       [$id, $bt['id'], $name, trim($b['description'] ?? ''), (float)($b['price'] ?? 0),
        isset($b['compare_at_price']) && $b['compare_at_price'] !== '' ? (float)$b['compare_at_price'] : null,
        isset($b['cost_price']) && $b['cost_price'] !== '' ? (float)$b['cost_price'] : null,
@@ -851,7 +857,8 @@ function products_create($pl) {
        trim($b['sku'] ?? ''), trim($b['barcode'] ?? ''), $slug,
        (int)!!($b['track_inventory'] ?? 1), (int)!!($b['allow_backorder'] ?? 0), (int)!!($b['is_physical'] ?? 1),
        isset($b['delivery_fee']) && $b['delivery_fee'] !== '' ? (float)$b['delivery_fee'] : null,
-       $optionsJson !== '' ? $optionsJson : null]);
+       $optionsJson !== '' ? $optionsJson : null,
+       (int)($b['low_stock_threshold'] ?? 5)]);
     foreach (($b['variants'] ?? []) as $v) {
         if (trim($v['name'] ?? '') === '') continue;
         q("INSERT INTO product_variants (id,product_id,name,price,stock_qty) VALUES (?,?,?,?,?)",
@@ -888,7 +895,7 @@ function products_update($pl) {
         $optionsJson = $p['options_json'];
     }
     q("UPDATE products SET name=?, description=?, price=?, compare_at_price=?, cost_price=?, stock_qty=?,
-       image_url=?, status=?, sku=?, barcode=?, slug=?, track_inventory=?, allow_backorder=?, is_physical=?, delivery_fee=?, options_json=?
+       image_url=?, status=?, sku=?, barcode=?, slug=?, track_inventory=?, allow_backorder=?, is_physical=?, delivery_fee=?, options_json=?, low_stock_threshold=?
        WHERE id=?",
       [$name, trim($b['description'] ?? $p['description']), (float)($b['price'] ?? $p['price']),
        isset($b['compare_at_price']) && $b['compare_at_price'] !== '' ? (float)$b['compare_at_price'] : $p['compare_at_price'],
@@ -899,7 +906,8 @@ function products_update($pl) {
        isset($b['allow_backorder']) ? (int)!!$b['allow_backorder'] : $p['allow_backorder'],
        isset($b['is_physical']) ? (int)!!$b['is_physical'] : $p['is_physical'],
        isset($b['delivery_fee']) && $b['delivery_fee'] !== '' ? (float)$b['delivery_fee'] : null,
-       $optionsJson, $p['id']]);
+       $optionsJson, isset($b['low_stock_threshold']) && $b['low_stock_threshold'] !== '' ? (int)$b['low_stock_threshold'] : $p['low_stock_threshold'],
+       $p['id']]);
     // Remplacement complet des variantes si le champ est fourni (le
     // generateur d'options cote tableau de bord envoie toujours la liste
     // complete a jour, y compris les variantes inchangees).
@@ -1144,13 +1152,12 @@ function shop_checkout() {
                 $variant = q("SELECT * FROM product_variants WHERE id=? AND product_id=?", [$it['variant_id'], $productId])->fetch();
             }
             $unitPrice = $variant && $variant['price'] !== null ? (float)$variant['price'] : (float)$product['price'];
-            $available = $variant ? (int)$variant['stock_qty'] : (int)$product['stock_qty'];
-            // Le stock n'est verifie/decompte que si le marchand suit la
-            // quantite pour ce produit ; s'il autorise la precommande, un
-            // stock insuffisant ne bloque plus la commande.
-            if ($product['track_inventory'] && !$product['allow_backorder'] && $available < $qty) {
-                throw new Exception('Stock insuffisant pour '.$product['name']);
-            }
+            // Une commande n'est jamais bloquee par manque de stock - c'est
+            // au marchand de s'organiser une fois la commande recue, pas a
+            // l'acheteur de le decouvrir au moment de payer. Le stock est
+            // simplement decompte (et peut devenir negatif, ce qui signale
+            // au marchand qu'il a vendu plus que ce qu'il avait) tant que
+            // le produit suit sa quantite (track_inventory).
             $subtotal += $unitPrice * $qty;
             $lineData[] = [
                 'product' => $product, 'variant' => $variant, 'qty' => $qty, 'unit_price' => $unitPrice,

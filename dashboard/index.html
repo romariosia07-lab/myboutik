@@ -823,19 +823,29 @@ function renderProducts(bt) {
   document.getElementById('content').innerHTML = '<div class="empty">Chargement…</div>';
   api('/products?action=list&boutique_id='+bt.id).then(({data}) => {
     const rows = data.data || [];
+    const lowStock = rows.filter(p => p.track_inventory && Number(p.stock_qty) <= Number(p.low_stock_threshold ?? 5));
     document.getElementById('content').innerHTML = `
       <div class="row-between"><div><h2 class="page-title">Produits</h2><div class="page-sub">${rows.length} produit(s)</div></div>
         <button class="btn btn-primary" onclick="openProductForm()">+ Nouveau produit</button></div>
+      ${lowStock.length ? '<div class="card" style="background:var(--amber-bg);border-color:#fde68a">⚠️ Stock bas sur '+lowStock.length+' produit(s) : '+lowStock.map(p=>escapeHtml(p.name)).join(', ')+'</div>' : ''}
       <div class="card">${rows.length ? `<table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Statut</th><th></th></tr></thead><tbody>
         ${rows.map(p=>`<tr><td>${escapeHtml(p.name)}${p.variants.length?' <span class="muted">('+p.variants.length+' variantes)</span>':''}</td>
           <td>${fmtMoney(p.price, bt.currency)}${p.compare_at_price && Number(p.compare_at_price) > Number(p.price) ? ' <span class="muted" style="text-decoration:line-through">'+fmtMoney(p.compare_at_price, bt.currency)+'</span>' : ''}</td>
-          <td>${p.stock_qty}</td>
+          <td>${stockBadge(p)}</td>
           <td>${p.status==='active'?'<span class="pill pill-delivered">Actif</span>':'<span class="pill pill-to_assign">Brouillon</span>'}</td>
           <td><button class="btn btn-ghost btn-sm" onclick="openProductForm('${p.id}')">Modifier</button>
               <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">Suppr.</button></td></tr>`).join('')}
         </tbody></table>` : '<div class="empty"><div class="big">📦</div>Aucun produit. Ajoutez votre premier produit.</div>'}</div>
     `;
   });
+}
+function stockBadge(p) {
+  if (!p.track_inventory) return '<span class="muted">—</span>';
+  const qty = Number(p.stock_qty);
+  const threshold = Number(p.low_stock_threshold ?? 5);
+  if (qty <= 0) return '<span class="pill pill-refused">'+qty+' · rupture</span>';
+  if (qty <= threshold) return '<span class="pill pill-pending">'+qty+' · bas</span>';
+  return qty;
 }
 function openProductForm(id) {
   if (!id) { renderProductFormModal({}); return; }
@@ -866,12 +876,15 @@ function renderProductFormModal(p) {
     </div>
     <div class="field-row">
       <div class="field"><label>Stock</label><input id="prodStock" type="number" min="0" value="${p.stock_qty||0}"></div>
-      <div class="field"><label>Statut</label><select id="prodStatus"><option value="draft" ${p.status==='draft'?'selected':''}>Brouillon</option><option value="active" ${p.status==='active'?'selected':''}>Actif</option></select></div>
+      <div class="field"><label>Alerte stock bas à partir de</label><input id="prodLowStock" type="number" min="0" value="${p.low_stock_threshold??5}"></div>
     </div>
-    <div class="field"><label>Slug (URL)</label><input id="prodSlug" value="${escapeHtml(p.slug||'')}" placeholder="genere automatiquement si vide"></div>
+    <div class="field-row">
+      <div class="field"><label>Statut</label><select id="prodStatus"><option value="draft" ${p.status==='draft'?'selected':''}>Brouillon</option><option value="active" ${p.status==='active'?'selected':''}>Actif</option></select></div>
+      <div class="field"><label>Slug (URL)</label><input id="prodSlug" value="${escapeHtml(p.slug||'')}" placeholder="genere automatiquement si vide"></div>
+    </div>
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><input type="checkbox" id="prodTrackInv" ${p.track_inventory!=0?'checked':''}> Suivre la quantité en stock</label>
-    <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><input type="checkbox" id="prodBackorder" ${p.allow_backorder?'checked':''}> Continuer à vendre quand le stock est épuisé</label>
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><input type="checkbox" id="prodPhysical" ${p.is_physical!=0?'checked':''}> Produit physique (nécessite une livraison)</label>
+    <div class="muted" style="margin:-6px 0 14px;font-size:12px">Une commande est toujours acceptée, même si le stock est insuffisant — c'est à vous de gérer la suite. L'alerte ci-dessus sert juste à repérer les produits à réapprovisionner.</div>
     <div class="field">
       <label>Photos${p.id?' ('+images.length+'/12)':''}</label>
       ${p.id ? `
@@ -1053,8 +1066,8 @@ function submitProductForm(id) {
     slug: document.getElementById('prodSlug').value.trim(),
     stock_qty: Number(document.getElementById('prodStock').value||0), status: document.getElementById('prodStatus').value,
     track_inventory: document.getElementById('prodTrackInv').checked,
-    allow_backorder: document.getElementById('prodBackorder').checked,
     is_physical: document.getElementById('prodPhysical').checked,
+    low_stock_threshold: document.getElementById('prodLowStock').value,
     options_json: JSON.stringify((window.__optionRows||[]).filter(r => r.name && r.name.trim() && r.values && r.values.length)),
     variants: window.__productVariants || [],
   };
