@@ -464,11 +464,23 @@ function renderDeliveries(bt) {
     document.getElementById('content').innerHTML = `
       <div class="row-between">
         <div><h2 class="page-title">Livraisons</h2><div class="page-sub">Assignez les commandes à un livreur et suivez chaque étape.</div></div>
-        <button class="btn btn-primary" onclick="openAddDeliveryPerson()">+ Ajouter un livreur</button>
+        <button class="btn btn-primary" onclick="openDeliveryPersonForm()">+ Ajouter un livreur</button>
       </div>
       ${P.filter(p=>p.active).length===0 ? '<div class="card" style="background:var(--amber-bg);border-color:#fde68a">Aucun livreur actif sur cette boutique. Ajoutez-en un pour pouvoir assigner les commandes.</div>' : ''}
       <div class="tabs">${cols.map(c=>'<div class="tab" onclick="filterDeliveries(\''+c+'\')">'+STATUS_LABELS[c]+' ('+rows.filter(r=>r.status===c).length+')</div>').join('')}</div>
       <div class="card" id="deliveriesTableWrap">${renderDeliveriesTable(rows, bt, P)}</div>
+      <div class="card">
+        <h3>Livreurs</h3>
+        ${P.length ? `<table><thead><tr><th>Nom</th><th>Téléphone</th><th>Véhicule</th><th>Statut</th><th></th></tr></thead><tbody>
+          ${P.map(p => `<tr>
+            <td>${p.photo_url?'<img src="'+escapeHtml(p.photo_url)+'" style="width:28px;height:28px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:8px">':''}${escapeHtml(p.name)}</td>
+            <td>${escapeHtml(p.phone||'')}</td>
+            <td>${escapeHtml(VEHICLE_LABELS[p.vehicle_type]||'—')}${p.plate_number?' · '+escapeHtml(p.plate_number):''}</td>
+            <td>${p.active?'<span class="pill pill-delivered">Actif</span>':'<span class="pill pill-refused">Inactif</span>'}</td>
+            <td><button class="btn btn-ghost btn-sm" onclick='openDeliveryPersonForm(${JSON.stringify(p).replace(/'/g,"&#39;")})'>Modifier</button></td>
+          </tr>`).join('')}
+          </tbody></table>` : '<div class="empty">Aucun livreur pour le moment.</div>'}
+      </div>
     `;
     window.__deliveriesAll = rows; window.__deliveryPersons = P;
   });
@@ -496,17 +508,47 @@ function deliveryStatusSelect(r) {
 }
 function assignDelivery(orderId, personId) { if(!personId) return; post('/deliveries?action=assign', {boutique_id:CURRENT.id, order_id:orderId, delivery_person_id:personId}).then(()=>route()); }
 function updateDeliveryStatus(orderId, status) { post('/deliveries?action=update_status', {boutique_id:CURRENT.id, order_id:orderId, status}).then(()=>route()); }
-function openAddDeliveryPerson() {
-  openModal(`<h2>Ajouter un livreur</h2>
-    <div class="field"><label>Nom</label><input id="dpName"></div>
-    <div class="field"><label>Téléphone</label><input id="dpPhone"></div>
+const VEHICLE_LABELS = {moto:'Moto', voiture:'Voiture', velo:'Vélo', a_pied:'À pied', autre:'Autre'};
+function openDeliveryPersonForm(p) {
+  p = p || {};
+  openModal(`<h2>${p.id?'Modifier le livreur':'Ajouter un livreur'}</h2>
+    <div id="dpMsg"></div>
+    <div class="field-row">
+      <div class="field"><label>Nom *</label><input id="dpName" value="${escapeHtml(p.name||'')}" placeholder="Mamadou Diallo"></div>
+      <div class="field"><label>Téléphone *</label><input id="dpPhone" value="${escapeHtml(p.phone||'')}" placeholder="+221 77 123 45 67"></div>
+    </div>
+    <div class="field"><label>Email (optionnel)</label><input id="dpEmail" value="${escapeHtml(p.email||'')}" placeholder="livreur@example.com"></div>
+    <div class="field-row">
+      <div class="field"><label>Véhicule</label><select id="dpVehicle">
+        <option value="">—</option>
+        ${Object.entries(VEHICLE_LABELS).map(([k,l])=>'<option value="'+k+'" '+(p.vehicle_type===k?'selected':'')+'>'+l+'</option>').join('')}
+      </select></div>
+      <div class="field"><label>Immatriculation</label><input id="dpPlate" value="${escapeHtml(p.plate_number||'')}" placeholder="DK-0429"></div>
+    </div>
+    <div class="field"><label>URL photo (optionnel)</label><input id="dpPhoto" value="${escapeHtml(p.photo_url||'')}" placeholder="https://.../photo.jpg"></div>
+    <div class="field"><label>Notes internes</label><textarea id="dpNotes" rows="2" placeholder="Disponibilités, zones préférées…">${escapeHtml(p.notes||'')}</textarea></div>
+    ${p.id ? '<label style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><input type="checkbox" id="dpActive" '+(p.active?'checked':'')+'> Actif</label>' : ''}
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
-    <button class="btn btn-primary" onclick="submitAddDeliveryPerson()">Ajouter</button></div>`);
+    <button class="btn btn-primary" onclick="submitDeliveryPersonForm('${p.id||''}')">${p.id?'Enregistrer':'Ajouter'}</button></div>`);
 }
-function submitAddDeliveryPerson() {
+function submitDeliveryPersonForm(id) {
   const name = document.getElementById('dpName').value.trim();
-  if (!name) return;
-  post('/deliveries?action=person_create', {boutique_id:CURRENT.id, name, phone:document.getElementById('dpPhone').value.trim()}).then(()=>{closeModal(); route();});
+  const phone = document.getElementById('dpPhone').value.trim();
+  if (!name || !phone) { document.getElementById('dpMsg').innerHTML = '<div class="msg error">Nom et téléphone requis</div>'; return; }
+  const payload = {
+    boutique_id: CURRENT.id, name, phone,
+    email: document.getElementById('dpEmail').value.trim(),
+    vehicle_type: document.getElementById('dpVehicle').value,
+    plate_number: document.getElementById('dpPlate').value.trim(),
+    photo_url: document.getElementById('dpPhoto').value.trim(),
+    notes: document.getElementById('dpNotes').value.trim(),
+  };
+  let action = '/deliveries?action=person_create';
+  if (id) { action = '/deliveries?action=person_update'; payload.id = id; payload.active = document.getElementById('dpActive').checked; }
+  post(action, payload).then(({data}) => {
+    if (!data.success) { document.getElementById('dpMsg').innerHTML = '<div class="msg error">'+data.message+'</div>'; return; }
+    closeModal(); route();
+  });
 }
 
 // ============================================================
@@ -788,47 +830,76 @@ function renderProducts(bt) {
         ${rows.map(p=>`<tr><td>${escapeHtml(p.name)}${p.variants.length?' <span class="muted">('+p.variants.length+' variantes)</span>':''}</td>
           <td>${fmtMoney(p.price, bt.currency)}</td><td>${p.stock_qty}</td>
           <td>${p.status==='active'?'<span class="pill pill-delivered">Actif</span>':'<span class="pill pill-to_assign">Brouillon</span>'}</td>
-          <td><button class="btn btn-ghost btn-sm" onclick='openProductForm(${JSON.stringify(p).replace(/'/g,"&#39;")})'>Modifier</button>
+          <td><button class="btn btn-ghost btn-sm" onclick="openProductForm('${p.id}')">Modifier</button>
               <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">Suppr.</button></td></tr>`).join('')}
         </tbody></table>` : '<div class="empty"><div class="big">📦</div>Aucun produit. Ajoutez votre premier produit.</div>'}</div>
     `;
   });
 }
-function openProductForm(p) {
+function openProductForm(id) {
+  if (!id) { renderProductFormModal({}); return; }
+  api('/products?action=get&boutique_id='+CURRENT.id+'&id='+id).then(({data}) => {
+    if (!data.success) { alert(data.message); return; }
+    renderProductFormModal(data.data);
+  });
+}
+function renderProductFormModal(p) {
   p = p || {};
+  window.__editingProductId = p.id || null;
+  const images = p.images || [];
   openModal(`<h2>${p.id?'Modifier le produit':'Nouveau produit'}</h2>
     <div id="prodMsg"></div>
     <div class="field"><label>Nom</label><input id="prodName" value="${escapeHtml(p.name||'')}"></div>
     <div class="field"><label>Description</label><textarea id="prodDesc" rows="2">${escapeHtml(p.description||'')}</textarea></div>
     <div class="field-row">
       <div class="field"><label>Prix de vente</label><input id="prodPrice" type="number" min="0" value="${p.price||''}"></div>
-      <div class="field"><label>Prix de revient</label><input id="prodCost" type="number" min="0" value="${p.cost_price||''}"></div>
+      <div class="field"><label>Prix barré (optionnel)</label><input id="prodCompareAt" type="number" min="0" value="${p.compare_at_price??''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Prix de revient (interne)</label><input id="prodCost" type="number" min="0" value="${p.cost_price??''}"></div>
+      <div class="field"><label>Frais de livraison (vide = frais par défaut de la boutique)</label><input id="prodDeliveryFee" type="number" min="0" value="${p.delivery_fee??''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Référence (SKU)</label><input id="prodSku" value="${escapeHtml(p.sku||'')}"></div>
+      <div class="field"><label>Code-barres (UPC, EAN)</label><input id="prodBarcode" value="${escapeHtml(p.barcode||'')}"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>Stock</label><input id="prodStock" type="number" min="0" value="${p.stock_qty||0}"></div>
       <div class="field"><label>Statut</label><select id="prodStatus"><option value="draft" ${p.status==='draft'?'selected':''}>Brouillon</option><option value="active" ${p.status==='active'?'selected':''}>Actif</option></select></div>
     </div>
-    <div class="field"><label>Photo du produit</label>
-      <input type="file" accept="image/*" onchange="handleProductImageFile(this)">
-      <div style="margin-top:8px">
-        <img id="prodImagePreview" src="${escapeHtml(p.image_url||'')}" style="max-width:120px;max-height:120px;border-radius:8px;display:${p.image_url?'block':'none'};object-fit:cover">
-      </div>
-      <input type="hidden" id="prodImage" value="${escapeHtml(p.image_url||'')}">
+    <div class="field"><label>Slug (URL)</label><input id="prodSlug" value="${escapeHtml(p.slug||'')}" placeholder="genere automatiquement si vide"></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><input type="checkbox" id="prodTrackInv" ${p.track_inventory!=0?'checked':''}> Suivre la quantité en stock</label>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><input type="checkbox" id="prodBackorder" ${p.allow_backorder?'checked':''}> Continuer à vendre quand le stock est épuisé</label>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><input type="checkbox" id="prodPhysical" ${p.is_physical!=0?'checked':''}> Produit physique (nécessite une livraison)</label>
+    <div class="field">
+      <label>Photos${p.id?' ('+images.length+'/12)':''}</label>
+      ${p.id ? `
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        ${images.map(img => `
+          <div style="position:relative">
+            <img src="${img.data}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:2px solid ${img.is_primary?'var(--blue)':'var(--border)'}">
+            ${img.is_primary
+              ? '<span style="position:absolute;bottom:2px;left:2px;background:var(--blue);color:#fff;font-size:9px;padding:1px 4px;border-radius:4px">Principale</span>'
+              : '<button type="button" onclick="setPrimaryProductImage(\''+img.id+'\')" style="position:absolute;bottom:2px;left:2px;background:#fff;border:1px solid var(--border);font-size:9px;padding:1px 4px;border-radius:4px;cursor:pointer">Définir</button>'}
+            <button type="button" onclick="deleteProductImage('${img.id}')" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:11px;cursor:pointer;line-height:1">✕</button>
+          </div>`).join('')}
+        ${images.length < 12 ? `<label style="width:72px;height:72px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--gray);font-size:24px">+<input type="file" accept="image/*" style="display:none" onchange="addProductImage(this)"></label>` : ''}
+      </div>` : `
+      <input type="file" accept="image/*" onchange="handleNewProductImageFile(this)">
+      <div class="muted" style="margin-top:6px">Enregistrez une première fois pour ajouter d'autres photos.</div>
+      <input type="hidden" id="prodImage" value="">`}
     </div>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitProductForm('${p.id||''}')">Enregistrer</button></div>`);
 }
-// Redimensionne/compresse la photo cote navigateur (max 900px, JPEG 80%)
-// avant de la stocker en base64 directement dans products.image_url (colonne
-// TEXT, aucune limite pratique) - evite d'avoir a heberger les images
-// ailleurs (pas de compte S3/Cloudinary a configurer).
-function handleProductImageFile(input) {
-  const file = input.files[0];
-  if (!file) return;
+// Redimensionne/compresse une photo cote navigateur avant de l'envoyer -
+// evite d'avoir a heberger les images ailleurs (pas de compte S3/Cloudinary
+// a configurer) : elles sont stockees en base64 directement en base (colonne
+// TEXT/product_images.data, aucune limite pratique pour un petit catalogue).
+function resizeImageToDataUrl(file, maxDim, cb) {
   const reader = new FileReader();
   reader.onload = e => {
     const img = new Image();
     img.onload = () => {
-      const maxDim = 900;
       let w = img.width, h = img.height;
       if (w > maxDim || h > maxDim) {
         if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
@@ -837,24 +908,52 @@ function handleProductImageFile(input) {
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-      document.getElementById('prodImage').value = dataUrl;
-      const preview = document.getElementById('prodImagePreview');
-      preview.src = dataUrl; preview.style.display = 'block';
+      cb(canvas.toDataURL('image/jpeg', 0.8));
     };
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
+}
+function handleNewProductImageFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  resizeImageToDataUrl(file, 900, dataUrl => { document.getElementById('prodImage').value = dataUrl; });
+}
+function addProductImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  resizeImageToDataUrl(file, 900, dataUrl => {
+    post('/products?action=image_add', {boutique_id:CURRENT.id, product_id:window.__editingProductId, data:dataUrl}).then(({data}) => {
+      if (!data.success) { alert(data.message); return; }
+      openProductForm(window.__editingProductId);
+    });
+  });
+}
+function deleteProductImage(imgId) {
+  if (!confirm('Supprimer cette photo ?')) return;
+  post('/products?action=image_delete', {boutique_id:CURRENT.id, id:imgId}).then(() => openProductForm(window.__editingProductId));
+}
+function setPrimaryProductImage(imgId) {
+  post('/products?action=image_set_primary', {boutique_id:CURRENT.id, id:imgId}).then(() => openProductForm(window.__editingProductId));
 }
 function submitProductForm(id) {
   const name = document.getElementById('prodName').value.trim();
   if (!name) { document.getElementById('prodMsg').innerHTML = '<div class="msg error">Le nom est requis</div>'; return; }
   const payload = {
     boutique_id: CURRENT.id, name, description: document.getElementById('prodDesc').value.trim(),
-    price: Number(document.getElementById('prodPrice').value||0), cost_price: document.getElementById('prodCost').value,
+    price: Number(document.getElementById('prodPrice').value||0),
+    compare_at_price: document.getElementById('prodCompareAt').value,
+    cost_price: document.getElementById('prodCost').value,
+    delivery_fee: document.getElementById('prodDeliveryFee').value,
+    sku: document.getElementById('prodSku').value.trim(),
+    barcode: document.getElementById('prodBarcode').value.trim(),
+    slug: document.getElementById('prodSlug').value.trim(),
     stock_qty: Number(document.getElementById('prodStock').value||0), status: document.getElementById('prodStatus').value,
-    image_url: document.getElementById('prodImage').value.trim(),
+    track_inventory: document.getElementById('prodTrackInv').checked,
+    allow_backorder: document.getElementById('prodBackorder').checked,
+    is_physical: document.getElementById('prodPhysical').checked,
   };
+  if (!id) payload.image_url = document.getElementById('prodImage').value.trim();
   const action = id ? '/products?action=update' : '/products?action=create';
   if (id) payload.id = id;
   post(action, payload).then(({data}) => {

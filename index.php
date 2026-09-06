@@ -324,6 +324,33 @@ function route_install() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )",
     "CREATE INDEX IF NOT EXISTS idx_products_boutique ON products(boutique_id)",
+    // Champs ajoutes apres le premier lancement (fiche produit complete :
+    // prix barre, reference interne, suivi de stock, produit
+    // physique/service, frais de livraison propre au produit qui prend le
+    // pas sur boutiques.default_delivery_fee quand il est renseigne).
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS compare_at_price DECIMAL(14,2)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS sku VARCHAR(60)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode VARCHAR(60)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS slug VARCHAR(100)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS track_inventory SMALLINT DEFAULT 1",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_backorder SMALLINT DEFAULT 0",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_physical SMALLINT DEFAULT 1",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_fee DECIMAL(14,2)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_boutique_slug ON products(boutique_id, slug) WHERE slug IS NOT NULL AND slug <> ''",
+    // Galerie de photos (plusieurs images par produit). products.image_url
+    // reste en place et reflete toujours l'image marquee is_primary=1 ici -
+    // tout le code existant qui lit deja image_url (liste produits, vitrine,
+    // panier) continue de fonctionner sans modification.
+    "CREATE TABLE IF NOT EXISTS product_images (
+        id VARCHAR(36) PRIMARY KEY,
+        product_id VARCHAR(36) NOT NULL,
+        boutique_id VARCHAR(36) NOT NULL,
+        data TEXT NOT NULL,
+        position INT DEFAULT 0,
+        is_primary SMALLINT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_productimages_product ON product_images(product_id)",
     "CREATE TABLE IF NOT EXISTS product_variants (
         id VARCHAR(36) PRIMARY KEY,
         product_id VARCHAR(36) NOT NULL,
@@ -420,6 +447,11 @@ function route_install() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )",
     "CREATE INDEX IF NOT EXISTS idx_delivpersons_boutique ON delivery_persons(boutique_id)",
+    "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS email VARCHAR(190)",
+    "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS vehicle_type VARCHAR(20)",
+    "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS plate_number VARCHAR(30)",
+    "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS photo_url TEXT",
+    "ALTER TABLE delivery_persons ADD COLUMN IF NOT EXISTS notes TEXT",
     "CREATE TABLE IF NOT EXISTS delivery_assignments (
         id VARCHAR(36) PRIMARY KEY,
         order_id VARCHAR(36) NOT NULL UNIQUE,
@@ -743,6 +775,9 @@ function route_products($action) {
         case 'update': products_update($pl); break;
         case 'delete': products_delete($pl); break;
         case 'stock_adjust': products_stock_adjust($pl); break;
+        case 'image_add':        product_image_add($pl); break;
+        case 'image_delete':     product_image_delete($pl); break;
+        case 'image_set_primary':product_image_set_primary($pl); break;
         case 'suppliers_list':   suppliers_list($pl); break;
         case 'supplier_create':  supplier_create($pl); break;
         case 'supplier_update':  supplier_update($pl); break;
@@ -773,7 +808,22 @@ function products_get($pl) {
     $bt = require_boutique_owned($_GET['boutique_id'] ?? '', $pl['sub']);
     $p = product_owned($_GET['id'] ?? '', $bt['id']);
     $p['variants'] = q("SELECT * FROM product_variants WHERE product_id=? ORDER BY name", [$p['id']])->fetchAll();
+    // Contrairement a products_list() (qui ne renvoie pas les images pour
+    // eviter d'alourdir la liste de tous les produits), la fiche d'un seul
+    // produit inclut la galerie complete (donnees base64 incluses).
+    $p['images'] = q("SELECT * FROM product_images WHERE product_id=? ORDER BY position", [$p['id']])->fetchAll();
     ok($p);
+}
+
+function unique_product_slug($boutiqueId, $base, $excludeId = null) {
+    $slug = $base; $i = 1;
+    while (true) {
+        $sql = "SELECT 1 FROM products WHERE boutique_id=? AND slug=?";
+        $params = [$boutiqueId, $slug];
+        if ($excludeId) { $sql .= " AND id<>?"; $params[] = $excludeId; }
+        if (!q($sql, $params)->fetch()) return $slug;
+        $i++; $slug = $base.'-'.$i;
+    }
 }
 
 function products_create($pl) {
@@ -782,15 +832,31 @@ function products_create($pl) {
     $name = trim($b['name'] ?? '');
     if ($name === '') fail('Le nom du produit est requis');
     $id = uid();
-    q("INSERT INTO products (id,boutique_id,name,description,price,cost_price,stock_qty,image_url,status)
-       VALUES (?,?,?,?,?,?,?,?,?)",
+    $slugInput = trim($b['slug'] ?? '');
+    $slug = unique_product_slug($bt['id'], slugify($slugInput !== '' ? $slugInput : $name));
+    q("INSERT INTO products (id,boutique_id,name,description,price,compare_at_price,cost_price,stock_qty,
+       image_url,status,sku,barcode,slug,track_inventory,allow_backorder,is_physical,delivery_fee)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       [$id, $bt['id'], $name, trim($b['description'] ?? ''), (float)($b['price'] ?? 0),
+       isset($b['compare_at_price']) && $b['compare_at_price'] !== '' ? (float)$b['compare_at_price'] : null,
        isset($b['cost_price']) && $b['cost_price'] !== '' ? (float)$b['cost_price'] : null,
-       (int)($b['stock_qty'] ?? 0), trim($b['image_url'] ?? ''), $b['status'] ?? 'draft']);
+       (int)($b['stock_qty'] ?? 0), trim($b['image_url'] ?? ''), $b['status'] ?? 'draft',
+       trim($b['sku'] ?? ''), trim($b['barcode'] ?? ''), $slug,
+       (int)!!($b['track_inventory'] ?? 1), (int)!!($b['allow_backorder'] ?? 0), (int)!!($b['is_physical'] ?? 1),
+       isset($b['delivery_fee']) && $b['delivery_fee'] !== '' ? (float)$b['delivery_fee'] : null]);
     foreach (($b['variants'] ?? []) as $v) {
         if (trim($v['name'] ?? '') === '') continue;
         q("INSERT INTO product_variants (id,product_id,name,price,stock_qty) VALUES (?,?,?,?,?)",
           [uid(), $id, trim($v['name']), isset($v['price']) && $v['price']!=='' ? (float)$v['price'] : null, (int)($v['stock_qty'] ?? 0)]);
+    }
+    // Garde products.image_url et la galerie product_images en synchro des
+    // la creation, pour que la photo posee au meme moment que le produit
+    // apparaisse bien comme premiere/principale une fois qu'on rouvre la
+    // fiche pour en ajouter d'autres.
+    $imageUrl = trim($b['image_url'] ?? '');
+    if ($imageUrl !== '') {
+        q("INSERT INTO product_images (id,product_id,boutique_id,data,position,is_primary) VALUES (?,?,?,?,0,1)",
+          [uid(), $id, $bt['id'], $imageUrl]);
     }
     log_activity($bt['id'], 'Produit ajoute: '.$name);
     ok(q("SELECT * FROM products WHERE id=?", [$id])->fetch(), 'Produit cree', 201);
@@ -801,12 +867,75 @@ function products_update($pl) {
     $bt = require_boutique_owned($b['boutique_id'] ?? '', $pl['sub']);
     $p = product_owned($b['id'] ?? '', $bt['id']);
     $name = trim($b['name'] ?? $p['name']);
-    q("UPDATE products SET name=?, description=?, price=?, cost_price=?, stock_qty=?, image_url=?, status=? WHERE id=?",
+    $slugInput = trim($b['slug'] ?? '');
+    $slug = $slugInput !== ''
+        ? unique_product_slug($bt['id'], slugify($slugInput), $p['id'])
+        : ($p['slug'] ?: unique_product_slug($bt['id'], slugify($name), $p['id']));
+    q("UPDATE products SET name=?, description=?, price=?, compare_at_price=?, cost_price=?, stock_qty=?,
+       image_url=?, status=?, sku=?, barcode=?, slug=?, track_inventory=?, allow_backorder=?, is_physical=?, delivery_fee=?
+       WHERE id=?",
       [$name, trim($b['description'] ?? $p['description']), (float)($b['price'] ?? $p['price']),
+       isset($b['compare_at_price']) && $b['compare_at_price'] !== '' ? (float)$b['compare_at_price'] : $p['compare_at_price'],
        isset($b['cost_price']) && $b['cost_price'] !== '' ? (float)$b['cost_price'] : $p['cost_price'],
        (int)($b['stock_qty'] ?? $p['stock_qty']), trim($b['image_url'] ?? $p['image_url']),
-       $b['status'] ?? $p['status'], $p['id']]);
+       $b['status'] ?? $p['status'], trim($b['sku'] ?? $p['sku']), trim($b['barcode'] ?? $p['barcode']), $slug,
+       isset($b['track_inventory']) ? (int)!!$b['track_inventory'] : $p['track_inventory'],
+       isset($b['allow_backorder']) ? (int)!!$b['allow_backorder'] : $p['allow_backorder'],
+       isset($b['is_physical']) ? (int)!!$b['is_physical'] : $p['is_physical'],
+       isset($b['delivery_fee']) && $b['delivery_fee'] !== '' ? (float)$b['delivery_fee'] : null,
+       $p['id']]);
     ok(q("SELECT * FROM products WHERE id=?", [$p['id']])->fetch(), 'Produit mis a jour');
+}
+
+// Galerie photos : chaque produit peut avoir plusieurs images. La premiere
+// ajoutee devient automatiquement l'image principale (is_primary=1) et
+// products.image_url est maintenu en synchro avec elle, pour que tout le
+// code deja ecrit (liste produits, vitrine, panier) continue de fonctionner
+// sans modification.
+function product_image_add($pl) {
+    $b = body();
+    $bt = require_boutique_owned($b['boutique_id'] ?? '', $pl['sub']);
+    $p = product_owned($b['product_id'] ?? '', $bt['id']);
+    $data = trim($b['data'] ?? '');
+    if ($data === '') fail('Image manquante');
+    $count = (int)q("SELECT COUNT(*) c FROM product_images WHERE product_id=?", [$p['id']])->fetch()['c'];
+    if ($count >= 12) fail('12 images maximum par produit', 400);
+    $isPrimary = $count === 0 ? 1 : 0;
+    $id = uid();
+    q("INSERT INTO product_images (id,product_id,boutique_id,data,position,is_primary) VALUES (?,?,?,?,?,?)",
+      [$id, $p['id'], $bt['id'], $data, $count, $isPrimary]);
+    if ($isPrimary) q("UPDATE products SET image_url=? WHERE id=?", [$data, $p['id']]);
+    ok(['id'=>$id, 'is_primary'=>$isPrimary], 'Image ajoutee', 201);
+}
+function product_image_owned($id, $boutiqueId) {
+    $row = q("SELECT * FROM product_images WHERE id=? AND boutique_id=?", [$id, $boutiqueId])->fetch();
+    if (!$row) fail('Image introuvable', 404);
+    return $row;
+}
+function product_image_delete($pl) {
+    $b = body();
+    $bt = require_boutique_owned($b['boutique_id'] ?? '', $pl['sub']);
+    $img = product_image_owned($b['id'] ?? '', $bt['id']);
+    q("DELETE FROM product_images WHERE id=?", [$img['id']]);
+    if ($img['is_primary']) {
+        $next = q("SELECT * FROM product_images WHERE product_id=? ORDER BY position LIMIT 1", [$img['product_id']])->fetch();
+        if ($next) {
+            q("UPDATE product_images SET is_primary=1 WHERE id=?", [$next['id']]);
+            q("UPDATE products SET image_url=? WHERE id=?", [$next['data'], $img['product_id']]);
+        } else {
+            q("UPDATE products SET image_url='' WHERE id=?", [$img['product_id']]);
+        }
+    }
+    ok(null, 'Image supprimee');
+}
+function product_image_set_primary($pl) {
+    $b = body();
+    $bt = require_boutique_owned($b['boutique_id'] ?? '', $pl['sub']);
+    $img = product_image_owned($b['id'] ?? '', $bt['id']);
+    q("UPDATE product_images SET is_primary=0 WHERE product_id=?", [$img['product_id']]);
+    q("UPDATE product_images SET is_primary=1 WHERE id=?", [$img['id']]);
+    q("UPDATE products SET image_url=? WHERE id=?", [$img['data'], $img['product_id']]);
+    ok(null, 'Image principale mise a jour');
 }
 
 function products_delete($pl) {
@@ -814,6 +943,7 @@ function products_delete($pl) {
     $bt = require_boutique_owned($b['boutique_id'] ?? '', $pl['sub']);
     $p = product_owned($b['id'] ?? '', $bt['id']);
     q("DELETE FROM product_variants WHERE product_id=?", [$p['id']]);
+    q("DELETE FROM product_images WHERE product_id=?", [$p['id']]);
     q("DELETE FROM products WHERE id=?", [$p['id']]);
     ok(null, 'Produit supprime');
 }
@@ -927,20 +1057,22 @@ function shop_boutique() {
 
 function shop_products() {
     $bt = public_boutique_by_slug($_GET['slug'] ?? '');
-    $rows = q("SELECT id,name,description,price,stock_qty,image_url FROM products
-               WHERE boutique_id=? AND status='active' ORDER BY created_at DESC", [$bt['id']])->fetchAll();
+    $rows = q("SELECT id,name,description,price,compare_at_price,stock_qty,image_url,slug,track_inventory,allow_backorder
+               FROM products WHERE boutique_id=? AND status='active' ORDER BY created_at DESC", [$bt['id']])->fetchAll();
     foreach ($rows as &$p) {
         $p['variants'] = q("SELECT id,name,price,stock_qty FROM product_variants WHERE product_id=? ORDER BY name", [$p['id']])->fetchAll();
+        $p['images'] = q("SELECT id,data FROM product_images WHERE product_id=? ORDER BY position", [$p['id']])->fetchAll();
     }
     ok($rows);
 }
 
 function shop_product() {
     $bt = public_boutique_by_slug($_GET['slug'] ?? '');
-    $p = q("SELECT id,name,description,price,stock_qty,image_url FROM products
-            WHERE id=? AND boutique_id=? AND status='active'", [$_GET['id'] ?? '', $bt['id']])->fetch();
+    $p = q("SELECT id,name,description,price,compare_at_price,stock_qty,image_url,slug,track_inventory,allow_backorder
+            FROM products WHERE id=? AND boutique_id=? AND status='active'", [$_GET['id'] ?? '', $bt['id']])->fetch();
     if (!$p) fail('Produit introuvable', 404);
     $p['variants'] = q("SELECT id,name,price,stock_qty FROM product_variants WHERE product_id=? ORDER BY name", [$p['id']])->fetchAll();
+    $p['images'] = q("SELECT id,data FROM product_images WHERE product_id=? ORDER BY position", [$p['id']])->fetchAll();
     ok($p);
 }
 
@@ -986,7 +1118,12 @@ function shop_checkout() {
             }
             $unitPrice = $variant && $variant['price'] !== null ? (float)$variant['price'] : (float)$product['price'];
             $available = $variant ? (int)$variant['stock_qty'] : (int)$product['stock_qty'];
-            if ($available < $qty) throw new Exception('Stock insuffisant pour '.$product['name']);
+            // Le stock n'est verifie/decompte que si le marchand suit la
+            // quantite pour ce produit ; s'il autorise la precommande, un
+            // stock insuffisant ne bloque plus la commande.
+            if ($product['track_inventory'] && !$product['allow_backorder'] && $available < $qty) {
+                throw new Exception('Stock insuffisant pour '.$product['name']);
+            }
             $subtotal += $unitPrice * $qty;
             $lineData[] = [
                 'product' => $product, 'variant' => $variant, 'qty' => $qty, 'unit_price' => $unitPrice,
@@ -994,8 +1131,18 @@ function shop_checkout() {
         }
         // Le frais de livraison vient de la boutique (reglage marchand), pas
         // du client - jamais du corps de la requete publique, pour eviter
-        // qu'un acheteur ne le mette a 0 lui-meme.
-        $deliveryFee = max(0, (float)$bt['default_delivery_fee']);
+        // qu'un acheteur ne le mette a 0 lui-meme. Chaque produit peut
+        // definir son propre frais (sinon celui de la boutique s'applique) ;
+        // une commande n'est livree qu'une fois, donc on retient le plus
+        // eleve des frais concernes plutot que de les additionner - et les
+        // produits non physiques (service/numerique) n'en ajoutent aucun.
+        $deliveryFee = 0;
+        foreach ($lineData as $l) {
+            if (!$l['product']['is_physical']) continue;
+            $productFee = $l['product']['delivery_fee'];
+            $fee = ($productFee !== null) ? (float)$productFee : (float)$bt['default_delivery_fee'];
+            $deliveryFee = max($deliveryFee, $fee);
+        }
         $total = $subtotal + $deliveryFee;
 
         $orderId = uid();
@@ -1012,7 +1159,9 @@ function shop_checkout() {
               [uid(), $orderId, $l['product']['id'],
                $l['product']['name'].($l['variant'] ? ' - '.$l['variant']['name'] : ''),
                $l['variant']['id'] ?? null, $l['unit_price'], $l['product']['cost_price'] ?? 0, $l['qty']]);
-            if ($l['variant']) {
+            if (!$l['product']['track_inventory']) {
+                // Stock illimite pour ce produit : rien a decompter.
+            } elseif ($l['variant']) {
                 q("UPDATE product_variants SET stock_qty = stock_qty - ? WHERE id=?", [$l['qty'], $l['variant']['id']]);
             } else {
                 q("UPDATE products SET stock_qty = stock_qty - ? WHERE id=?", [$l['qty'], $l['product']['id']]);
@@ -1271,7 +1420,10 @@ function delivery_person_create($pl) {
     $name = trim($b['name'] ?? '');
     if ($name === '') fail('Le nom du livreur est requis');
     $id = uid();
-    q("INSERT INTO delivery_persons (id,boutique_id,name,phone) VALUES (?,?,?,?)", [$id, $bt['id'], $name, trim($b['phone'] ?? '')]);
+    q("INSERT INTO delivery_persons (id,boutique_id,name,phone,email,vehicle_type,plate_number,photo_url,notes)
+       VALUES (?,?,?,?,?,?,?,?,?)",
+      [$id, $bt['id'], $name, trim($b['phone'] ?? ''), trim($b['email'] ?? ''), trim($b['vehicle_type'] ?? ''),
+       trim($b['plate_number'] ?? ''), trim($b['photo_url'] ?? ''), trim($b['notes'] ?? '')]);
     ok(q("SELECT * FROM delivery_persons WHERE id=?", [$id])->fetch(), 'Livreur ajoute', 201);
 }
 function delivery_person_owned($id, $boutiqueId) {
@@ -1283,8 +1435,12 @@ function delivery_person_update($pl) {
     $b = body();
     $bt = require_boutique_owned($b['boutique_id'] ?? '', $pl['sub']);
     $row = delivery_person_owned($b['id'] ?? '', $bt['id']);
-    q("UPDATE delivery_persons SET name=?, phone=?, active=? WHERE id=?",
-      [trim($b['name'] ?? $row['name']), trim($b['phone'] ?? $row['phone']), isset($b['active']) ? (int)!!$b['active'] : $row['active'], $row['id']]);
+    q("UPDATE delivery_persons SET name=?, phone=?, active=?, email=?, vehicle_type=?, plate_number=?, photo_url=?, notes=? WHERE id=?",
+      [trim($b['name'] ?? $row['name']), trim($b['phone'] ?? $row['phone']),
+       isset($b['active']) ? (int)!!$b['active'] : $row['active'],
+       trim($b['email'] ?? $row['email']), trim($b['vehicle_type'] ?? $row['vehicle_type']),
+       trim($b['plate_number'] ?? $row['plate_number']), trim($b['photo_url'] ?? $row['photo_url']),
+       trim($b['notes'] ?? $row['notes']), $row['id']]);
     ok(q("SELECT * FROM delivery_persons WHERE id=?", [$row['id']])->fetch(), 'Livreur mis a jour');
 }
 function delivery_person_delete($pl) {

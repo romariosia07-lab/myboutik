@@ -112,6 +112,13 @@ if (!SLUG) {
     document.title = BOUTIQUE.name;
     renderShop();
     post('/shop?action=track_visit', {slug:SLUG, session_id:sessionId(), path:window.location.pathname, referrer:document.referrer});
+    // Lien direct vers une fiche produit (ex: partage sur WhatsApp) :
+    // store/index.html?b=boutique&p=slug-du-produit ouvre directement sa fiche.
+    const productSlug = new URLSearchParams(window.location.search).get('p');
+    if (productSlug) {
+      const match = PRODUCTS.find(x => x.slug === productSlug);
+      if (match) openProduct(match.id);
+    }
   });
 }
 
@@ -125,7 +132,9 @@ function renderShop() {
       ${PRODUCTS.length ? '<div class="products-grid">'+PRODUCTS.map(p => `
         <div class="product-card" onclick="openProduct('${p.id}')">
           ${p.image_url ? '<img src="'+escapeHtml(p.image_url)+'" alt="">' : '<div class="ph">🛍️</div>'}
-          <div class="body"><div class="name">${escapeHtml(p.name)}</div><div class="price">${fmtMoney(p.price, BOUTIQUE.currency)}</div></div>
+          <div class="body"><div class="name">${escapeHtml(p.name)}</div>
+            <div class="price">${fmtMoney(p.price, BOUTIQUE.currency)}${p.compare_at_price && p.compare_at_price > p.price ? ' <span style="color:var(--gray);font-weight:400;text-decoration:line-through;font-size:13px">'+fmtMoney(p.compare_at_price, BOUTIQUE.currency)+'</span>' : ''}</div>
+          </div>
         </div>`).join('')+'</div>'
       : '<div class="empty"><div class="big">🛍️</div>Cette boutique n\'a pas encore de produits en ligne.</div>'}
     </div>
@@ -153,12 +162,14 @@ function openProduct(id) {
   const p = PRODUCTS.find(x => x.id === id);
   if (!p) return;
   const hasVariants = p.variants && p.variants.length > 0;
+  const images = (p.images && p.images.length) ? p.images.map(img => img.data) : (p.image_url ? [p.image_url] : []);
   document.getElementById('productSheet').innerHTML = `
     <button class="close" onclick="closeOverlay('productOverlay')">✕</button>
-    ${p.image_url ? '<img src="'+escapeHtml(p.image_url)+'" style="width:100%;border-radius:12px;margin-bottom:14px;aspect-ratio:1/1;object-fit:cover">' : ''}
+    ${images.length ? '<img id="pdHeroImage" src="'+escapeHtml(images[0])+'" style="width:100%;border-radius:12px;margin-bottom:8px;aspect-ratio:1/1;object-fit:cover">' : ''}
+    ${images.length > 1 ? '<div style="display:flex;gap:6px;margin-bottom:14px;overflow-x:auto">'+images.map((src,i)=>'<img src="'+escapeHtml(src)+'" onclick="document.getElementById(\'pdHeroImage\').src=this.src" style="width:56px;height:56px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid '+(i===0?'var(--blue)':'var(--border)')+'">').join('')+'</div>' : ''}
     <h2>${escapeHtml(p.name)}</h2>
     <p style="color:var(--gray);font-size:14px;margin:8px 0">${escapeHtml(p.description||'')}</p>
-    <div style="font-weight:800;font-size:20px;color:var(--blue)" id="pdPrice">${fmtMoney(p.price, BOUTIQUE.currency)}</div>
+    <div id="pdPrice">${renderPriceHtml(p.price, p.compare_at_price)}</div>
     ${hasVariants ? '<div class="field"><label>Choix</label><select id="pdVariant" onchange="updateVariantPrice(\''+p.id+'\')"><option value="">Standard</option>'+
       p.variants.map(v=>'<option value="'+v.id+'" data-price="'+(v.price??p.price)+'">'+escapeHtml(v.name)+'</option>').join('')+'</select></div>' : ''}
     <div class="qty-row"><button onclick="stepQty(-1)">-</button><span id="pdQty">1</span><button onclick="stepQty(1)">+</button></div>
@@ -167,12 +178,19 @@ function openProduct(id) {
   document.getElementById('productOverlay').classList.add('open');
   window.__pdQty = 1;
 }
+function renderPriceHtml(price, compareAt) {
+  const main = '<span style="font-weight:800;font-size:20px;color:var(--blue)">'+fmtMoney(price, BOUTIQUE.currency)+'</span>';
+  if (compareAt && compareAt > price) {
+    return main + ' <span style="color:var(--gray);text-decoration:line-through;font-size:14px">'+fmtMoney(compareAt, BOUTIQUE.currency)+'</span>';
+  }
+  return main;
+}
 function stepQty(d) { window.__pdQty = Math.max(1, (window.__pdQty||1)+d); document.getElementById('pdQty').textContent = window.__pdQty; }
 function updateVariantPrice(productId) {
   const p = PRODUCTS.find(x=>x.id===productId);
   const sel = document.getElementById('pdVariant');
   const price = sel.value ? Number(sel.selectedOptions[0].dataset.price) : p.price;
-  document.getElementById('pdPrice').textContent = fmtMoney(price, BOUTIQUE.currency);
+  document.getElementById('pdPrice').innerHTML = renderPriceHtml(price, sel.value ? null : p.compare_at_price);
 }
 function addToCart(productId) {
   const p = PRODUCTS.find(x => x.id === productId);
