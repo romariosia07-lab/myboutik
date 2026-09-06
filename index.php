@@ -336,6 +336,11 @@ function route_install() {
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_backorder SMALLINT DEFAULT 0",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_physical SMALLINT DEFAULT 1",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_fee DECIMAL(14,2)",
+    // Definition des options (Taille, Couleur...) ayant servi a generer les
+    // variantes - stockee telle quelle (JSON) pour pouvoir rouvrir le
+    // generateur avec les memes lignes plutot que de les reconstruire a
+    // partir des noms de variantes deja crees.
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS options_json TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_boutique_slug ON products(boutique_id, slug) WHERE slug IS NOT NULL AND slug <> ''",
     // Galerie de photos (plusieurs images par produit). products.image_url
     // reste en place et reflete toujours l'image marquee is_primary=1 ici -
@@ -834,16 +839,19 @@ function products_create($pl) {
     $id = uid();
     $slugInput = trim($b['slug'] ?? '');
     $slug = unique_product_slug($bt['id'], slugify($slugInput !== '' ? $slugInput : $name));
+    $optionsJson = trim($b['options_json'] ?? '');
+    if ($optionsJson !== '' && json_decode($optionsJson) === null) $optionsJson = '';
     q("INSERT INTO products (id,boutique_id,name,description,price,compare_at_price,cost_price,stock_qty,
-       image_url,status,sku,barcode,slug,track_inventory,allow_backorder,is_physical,delivery_fee)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+       image_url,status,sku,barcode,slug,track_inventory,allow_backorder,is_physical,delivery_fee,options_json)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       [$id, $bt['id'], $name, trim($b['description'] ?? ''), (float)($b['price'] ?? 0),
        isset($b['compare_at_price']) && $b['compare_at_price'] !== '' ? (float)$b['compare_at_price'] : null,
        isset($b['cost_price']) && $b['cost_price'] !== '' ? (float)$b['cost_price'] : null,
        (int)($b['stock_qty'] ?? 0), trim($b['image_url'] ?? ''), $b['status'] ?? 'draft',
        trim($b['sku'] ?? ''), trim($b['barcode'] ?? ''), $slug,
        (int)!!($b['track_inventory'] ?? 1), (int)!!($b['allow_backorder'] ?? 0), (int)!!($b['is_physical'] ?? 1),
-       isset($b['delivery_fee']) && $b['delivery_fee'] !== '' ? (float)$b['delivery_fee'] : null]);
+       isset($b['delivery_fee']) && $b['delivery_fee'] !== '' ? (float)$b['delivery_fee'] : null,
+       $optionsJson !== '' ? $optionsJson : null]);
     foreach (($b['variants'] ?? []) as $v) {
         if (trim($v['name'] ?? '') === '') continue;
         q("INSERT INTO product_variants (id,product_id,name,price,stock_qty) VALUES (?,?,?,?,?)",
@@ -871,8 +879,16 @@ function products_update($pl) {
     $slug = $slugInput !== ''
         ? unique_product_slug($bt['id'], slugify($slugInput), $p['id'])
         : ($p['slug'] ?: unique_product_slug($bt['id'], slugify($name), $p['id']));
+    $optionsJson = null;
+    if (array_key_exists('options_json', $b)) {
+        $optionsJson = trim($b['options_json'] ?? '');
+        if ($optionsJson !== '' && json_decode($optionsJson) === null) $optionsJson = '';
+        $optionsJson = $optionsJson !== '' ? $optionsJson : null;
+    } else {
+        $optionsJson = $p['options_json'];
+    }
     q("UPDATE products SET name=?, description=?, price=?, compare_at_price=?, cost_price=?, stock_qty=?,
-       image_url=?, status=?, sku=?, barcode=?, slug=?, track_inventory=?, allow_backorder=?, is_physical=?, delivery_fee=?
+       image_url=?, status=?, sku=?, barcode=?, slug=?, track_inventory=?, allow_backorder=?, is_physical=?, delivery_fee=?, options_json=?
        WHERE id=?",
       [$name, trim($b['description'] ?? $p['description']), (float)($b['price'] ?? $p['price']),
        isset($b['compare_at_price']) && $b['compare_at_price'] !== '' ? (float)$b['compare_at_price'] : $p['compare_at_price'],
@@ -883,7 +899,18 @@ function products_update($pl) {
        isset($b['allow_backorder']) ? (int)!!$b['allow_backorder'] : $p['allow_backorder'],
        isset($b['is_physical']) ? (int)!!$b['is_physical'] : $p['is_physical'],
        isset($b['delivery_fee']) && $b['delivery_fee'] !== '' ? (float)$b['delivery_fee'] : null,
-       $p['id']]);
+       $optionsJson, $p['id']]);
+    // Remplacement complet des variantes si le champ est fourni (le
+    // generateur d'options cote tableau de bord envoie toujours la liste
+    // complete a jour, y compris les variantes inchangees).
+    if (array_key_exists('variants', $b)) {
+        q("DELETE FROM product_variants WHERE product_id=?", [$p['id']]);
+        foreach (($b['variants'] ?? []) as $v) {
+            if (trim($v['name'] ?? '') === '') continue;
+            q("INSERT INTO product_variants (id,product_id,name,price,stock_qty) VALUES (?,?,?,?,?)",
+              [uid(), $p['id'], trim($v['name']), isset($v['price']) && $v['price']!=='' ? (float)$v['price'] : null, (int)($v['stock_qty'] ?? 0)]);
+        }
+    }
     ok(q("SELECT * FROM products WHERE id=?", [$p['id']])->fetch(), 'Produit mis a jour');
 }
 
@@ -1057,7 +1084,7 @@ function shop_boutique() {
 
 function shop_products() {
     $bt = public_boutique_by_slug($_GET['slug'] ?? '');
-    $rows = q("SELECT id,name,description,price,compare_at_price,stock_qty,image_url,slug,track_inventory,allow_backorder
+    $rows = q("SELECT id,name,description,price,compare_at_price,stock_qty,image_url,slug,track_inventory,allow_backorder,is_physical,delivery_fee,options_json
                FROM products WHERE boutique_id=? AND status='active' ORDER BY created_at DESC", [$bt['id']])->fetchAll();
     foreach ($rows as &$p) {
         $p['variants'] = q("SELECT id,name,price,stock_qty FROM product_variants WHERE product_id=? ORDER BY name", [$p['id']])->fetchAll();
@@ -1068,7 +1095,7 @@ function shop_products() {
 
 function shop_product() {
     $bt = public_boutique_by_slug($_GET['slug'] ?? '');
-    $p = q("SELECT id,name,description,price,compare_at_price,stock_qty,image_url,slug,track_inventory,allow_backorder
+    $p = q("SELECT id,name,description,price,compare_at_price,stock_qty,image_url,slug,track_inventory,allow_backorder,is_physical,delivery_fee,options_json
             FROM products WHERE id=? AND boutique_id=? AND status='active'", [$_GET['id'] ?? '', $bt['id']])->fetch();
     if (!$p) fail('Produit introuvable', 404);
     $p['variants'] = q("SELECT id,name,price,stock_qty FROM product_variants WHERE product_id=? ORDER BY name", [$p['id']])->fetchAll();

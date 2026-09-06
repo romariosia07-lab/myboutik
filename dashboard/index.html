@@ -828,7 +828,8 @@ function renderProducts(bt) {
         <button class="btn btn-primary" onclick="openProductForm()">+ Nouveau produit</button></div>
       <div class="card">${rows.length ? `<table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Statut</th><th></th></tr></thead><tbody>
         ${rows.map(p=>`<tr><td>${escapeHtml(p.name)}${p.variants.length?' <span class="muted">('+p.variants.length+' variantes)</span>':''}</td>
-          <td>${fmtMoney(p.price, bt.currency)}</td><td>${p.stock_qty}</td>
+          <td>${fmtMoney(p.price, bt.currency)}${p.compare_at_price && Number(p.compare_at_price) > Number(p.price) ? ' <span class="muted" style="text-decoration:line-through">'+fmtMoney(p.compare_at_price, bt.currency)+'</span>' : ''}</td>
+          <td>${p.stock_qty}</td>
           <td>${p.status==='active'?'<span class="pill pill-delivered">Actif</span>':'<span class="pill pill-to_assign">Brouillon</span>'}</td>
           <td><button class="btn btn-ghost btn-sm" onclick="openProductForm('${p.id}')">Modifier</button>
               <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">Suppr.</button></td></tr>`).join('')}
@@ -883,14 +884,76 @@ function renderProductFormModal(p) {
               : '<button type="button" onclick="setPrimaryProductImage(\''+img.id+'\')" style="position:absolute;bottom:2px;left:2px;background:#fff;border:1px solid var(--border);font-size:9px;padding:1px 4px;border-radius:4px;cursor:pointer">Définir</button>'}
             <button type="button" onclick="deleteProductImage('${img.id}')" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:11px;cursor:pointer;line-height:1">✕</button>
           </div>`).join('')}
-        ${images.length < 12 ? `<label style="width:72px;height:72px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--gray);font-size:24px">+<input type="file" accept="image/*" style="display:none" onchange="addProductImage(this)"></label>` : ''}
+        ${images.length < 12 ? `<label style="width:72px;height:72px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--gray);font-size:24px">+<input type="file" accept="image/*" multiple style="display:none" onchange="addProductImage(this)"></label>` : ''}
       </div>` : `
-      <input type="file" accept="image/*" onchange="handleNewProductImageFile(this)">
+      <input type="file" accept="image/*" multiple onchange="handleNewProductImageFile(this)">
       <div class="muted" style="margin-top:6px">Enregistrez une première fois pour ajouter d'autres photos.</div>
       <input type="hidden" id="prodImage" value="">`}
     </div>
+    <div class="field">
+      <label>Options (génère les variantes automatiquement, 3 max)</label>
+      <div id="optionRows"></div>
+      <button type="button" class="btn btn-ghost btn-sm" id="addOptionBtn" onclick="addOptionRow()">+ Ajouter une option</button>
+      <button type="button" class="btn btn-primary btn-sm" style="margin-left:8px" onclick="generateVariants()">Générer les variantes</button>
+      <div id="variantsTableWrap" style="margin-top:12px"></div>
+    </div>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="submitProductForm('${p.id||''}')">Enregistrer</button></div>`);
+  window.__optionRows = [];
+  try { const parsed = p.options_json ? JSON.parse(p.options_json) : []; if (Array.isArray(parsed)) window.__optionRows = parsed; } catch(e) {}
+  if (!window.__optionRows.length) window.__optionRows = [{name:'', values:[]}];
+  window.__productVariants = (p.variants || []).map(v => ({name:v.name, price:v.price, stock_qty:v.stock_qty}));
+  renderOptionRows();
+  renderVariantsTable();
 }
+function renderOptionRows() {
+  const rows = window.__optionRows;
+  document.getElementById('optionRows').innerHTML = rows.map((r,i) => `
+    <div class="field-row" style="margin-bottom:8px">
+      <input placeholder="Ex: Taille" value="${escapeHtml(r.name)}" oninput="window.__optionRows[${i}].name=this.value">
+      <input placeholder="Ex: S, M, L" value="${escapeHtml((r.values||[]).join(', '))}" oninput="window.__optionRows[${i}].values=this.value.split(',').map(v=>v.trim()).filter(Boolean)">
+    </div>
+  `).join('');
+  document.getElementById('addOptionBtn').style.display = rows.length >= 3 ? 'none' : 'inline-block';
+}
+function addOptionRow() {
+  if (window.__optionRows.length >= 3) return;
+  window.__optionRows.push({name:'', values:[]});
+  renderOptionRows();
+}
+// Genere le produit cartesien des valeurs de chaque option (ex: Taille
+// S/M/L x Couleur Rouge/Bleu -> 6 variantes "S / Rouge", "S / Bleu", ...).
+// Les variantes deja existantes portant le meme nom conservent leur prix et
+// leur stock au lieu d'etre reinitialisees a chaque regeneration.
+function generateVariants() {
+  const groups = window.__optionRows.filter(r => r.name.trim() && r.values && r.values.length);
+  if (!groups.length) { alert('Renseignez au moins une option avec des valeurs (ex: Taille -> S, M, L)'); return; }
+  const combos = groups.reduce((acc, g) => {
+    const next = [];
+    acc.forEach(comboArr => g.values.forEach(v => next.push([...comboArr, v])));
+    return next;
+  }, [[]]);
+  const existing = {};
+  window.__productVariants.forEach(v => existing[v.name] = v);
+  window.__productVariants = combos.map(comboArr => {
+    const name = comboArr.join(' / ');
+    return existing[name] || {name, price:'', stock_qty:0};
+  });
+  renderVariantsTable();
+}
+function renderVariantsTable() {
+  const rows = window.__productVariants;
+  document.getElementById('variantsTableWrap').innerHTML = rows.length ? `
+    <label>Variantes générées (${rows.length})</label>
+    <table><thead><tr><th>Variante</th><th>Prix (optionnel)</th><th>Stock</th><th></th></tr></thead><tbody>
+    ${rows.map((v,i)=>`<tr>
+      <td>${escapeHtml(v.name)}</td>
+      <td><input type="number" min="0" value="${v.price??''}" style="width:90px" oninput="window.__productVariants[${i}].price=this.value"></td>
+      <td><input type="number" min="0" value="${v.stock_qty||0}" style="width:70px" oninput="window.__productVariants[${i}].stock_qty=Number(this.value||0)"></td>
+      <td><button type="button" class="btn btn-ghost btn-sm" onclick="removeVariantRow(${i})">✕</button></td>
+    </tr>`).join('')}
+    </tbody></table>` : '';
+}
+function removeVariantRow(i) { window.__productVariants.splice(i,1); renderVariantsTable(); }
 // Redimensionne/compresse une photo cote navigateur avant de l'envoyer -
 // evite d'avoir a heberger les images ailleurs (pas de compte S3/Cloudinary
 // a configurer) : elles sont stockees en base64 directement en base (colonne
@@ -915,19 +978,26 @@ function resizeImageToDataUrl(file, maxDim, cb) {
   reader.readAsDataURL(file);
 }
 function handleNewProductImageFile(input) {
+  // Un seul emplacement disponible avant la creation du produit (products.
+  // image_url) - si plusieurs fichiers sont choisis ici, seul le premier est
+  // utilise ; les autres pourront etre ajoutes juste apres via la galerie.
   const file = input.files[0];
   if (!file) return;
   resizeImageToDataUrl(file, 900, dataUrl => { document.getElementById('prodImage').value = dataUrl; });
 }
 function addProductImage(input) {
-  const file = input.files[0];
-  if (!file) return;
-  resizeImageToDataUrl(file, 900, dataUrl => {
-    post('/products?action=image_add', {boutique_id:CURRENT.id, product_id:window.__editingProductId, data:dataUrl}).then(({data}) => {
-      if (!data.success) { alert(data.message); return; }
-      openProductForm(window.__editingProductId);
-    });
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  const productId = window.__editingProductId;
+  let chain = Promise.resolve();
+  files.forEach(file => {
+    chain = chain.then(() => new Promise(resolve => {
+      resizeImageToDataUrl(file, 900, dataUrl => {
+        post('/products?action=image_add', {boutique_id:CURRENT.id, product_id:productId, data:dataUrl}).then(resolve);
+      });
+    }));
   });
+  chain.then(() => openProductForm(productId));
 }
 function deleteProductImage(imgId) {
   if (!confirm('Supprimer cette photo ?')) return;
@@ -952,6 +1022,8 @@ function submitProductForm(id) {
     track_inventory: document.getElementById('prodTrackInv').checked,
     allow_backorder: document.getElementById('prodBackorder').checked,
     is_physical: document.getElementById('prodPhysical').checked,
+    options_json: JSON.stringify((window.__optionRows||[]).filter(r => r.name && r.name.trim() && r.values && r.values.length)),
+    variants: window.__productVariants || [],
   };
   if (!id) payload.image_url = document.getElementById('prodImage').value.trim();
   const action = id ? '/products?action=update' : '/products?action=create';

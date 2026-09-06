@@ -133,7 +133,7 @@ function renderShop() {
         <div class="product-card" onclick="openProduct('${p.id}')">
           ${p.image_url ? '<img src="'+escapeHtml(p.image_url)+'" alt="">' : '<div class="ph">🛍️</div>'}
           <div class="body"><div class="name">${escapeHtml(p.name)}</div>
-            <div class="price">${fmtMoney(p.price, BOUTIQUE.currency)}${p.compare_at_price && p.compare_at_price > p.price ? ' <span style="color:var(--gray);font-weight:400;text-decoration:line-through;font-size:13px">'+fmtMoney(p.compare_at_price, BOUTIQUE.currency)+'</span>' : ''}</div>
+            <div class="price">${fmtMoney(p.price, BOUTIQUE.currency)}${p.compare_at_price && Number(p.compare_at_price) > Number(p.price) ? ' <span style="color:var(--gray);font-weight:400;text-decoration:line-through;font-size:13px">'+fmtMoney(p.compare_at_price, BOUTIQUE.currency)+'</span>' : ''}</div>
           </div>
         </div>`).join('')+'</div>'
       : '<div class="empty"><div class="big">🛍️</div>Cette boutique n\'a pas encore de produits en ligne.</div>'}
@@ -161,8 +161,28 @@ function renderShop() {
 function openProduct(id) {
   const p = PRODUCTS.find(x => x.id === id);
   if (!p) return;
-  const hasVariants = p.variants && p.variants.length > 0;
   const images = (p.images && p.images.length) ? p.images.map(img => img.data) : (p.image_url ? [p.image_url] : []);
+  let optionGroups = [];
+  try { optionGroups = p.options_json ? JSON.parse(p.options_json) : []; } catch(e) { optionGroups = []; }
+  const hasVariants = p.variants && p.variants.length > 0;
+  const useOptionSelectors = Array.isArray(optionGroups) && optionGroups.length > 0 && hasVariants;
+
+  let variantHtml = '';
+  if (useOptionSelectors) {
+    // Un selecteur separe par option (Taille, Couleur...) plutot qu'une
+    // seule liste avec les noms combines - l'acheteur choisit chaque
+    // caracteristique independamment, comme sur un site marchand classique.
+    variantHtml = optionGroups.map((g, gi) => `
+      <div class="field"><label>${escapeHtml(g.name)}</label>
+        <select id="pdOpt${gi}" onchange="resolveVariantSelection('${p.id}')">
+          ${(g.values||[]).map(v => '<option value="'+escapeHtml(v)+'">'+escapeHtml(v)+'</option>').join('')}
+        </select>
+      </div>`).join('');
+  } else if (hasVariants) {
+    variantHtml = '<div class="field"><label>Choix</label><select id="pdVariant" onchange="updateVariantPrice(\''+p.id+'\')"><option value="">Standard</option>'+
+      p.variants.map(v=>'<option value="'+v.id+'" data-price="'+(v.price??p.price)+'">'+escapeHtml(v.name)+'</option>').join('')+'</select></div>';
+  }
+
   document.getElementById('productSheet').innerHTML = `
     <button class="close" onclick="closeOverlay('productOverlay')">✕</button>
     ${images.length ? '<img id="pdHeroImage" src="'+escapeHtml(images[0])+'" style="width:100%;border-radius:12px;margin-bottom:8px;aspect-ratio:1/1;object-fit:cover">' : ''}
@@ -170,17 +190,19 @@ function openProduct(id) {
     <h2>${escapeHtml(p.name)}</h2>
     <p style="color:var(--gray);font-size:14px;margin:8px 0">${escapeHtml(p.description||'')}</p>
     <div id="pdPrice">${renderPriceHtml(p.price, p.compare_at_price)}</div>
-    ${hasVariants ? '<div class="field"><label>Choix</label><select id="pdVariant" onchange="updateVariantPrice(\''+p.id+'\')"><option value="">Standard</option>'+
-      p.variants.map(v=>'<option value="'+v.id+'" data-price="'+(v.price??p.price)+'">'+escapeHtml(v.name)+'</option>').join('')+'</select></div>' : ''}
+    ${variantHtml}
+    <div id="pdAvailability" style="font-size:13px;margin:4px 0 0"></div>
     <div class="qty-row"><button onclick="stepQty(-1)">-</button><span id="pdQty">1</span><button onclick="stepQty(1)">+</button></div>
-    <button class="btn btn-primary" onclick="addToCart('${p.id}')">Ajouter au panier</button>
+    <button class="btn btn-primary" id="pdAddBtn" onclick="addToCart('${p.id}')">Ajouter au panier</button>
   `;
   document.getElementById('productOverlay').classList.add('open');
   window.__pdQty = 1;
+  window.__pdResolvedVariant = null;
+  if (useOptionSelectors) resolveVariantSelection(p.id);
 }
 function renderPriceHtml(price, compareAt) {
   const main = '<span style="font-weight:800;font-size:20px;color:var(--blue)">'+fmtMoney(price, BOUTIQUE.currency)+'</span>';
-  if (compareAt && compareAt > price) {
+  if (compareAt && Number(compareAt) > Number(price)) {
     return main + ' <span style="color:var(--gray);text-decoration:line-through;font-size:14px">'+fmtMoney(compareAt, BOUTIQUE.currency)+'</span>';
   }
   return main;
@@ -192,11 +214,46 @@ function updateVariantPrice(productId) {
   const price = sel.value ? Number(sel.selectedOptions[0].dataset.price) : p.price;
   document.getElementById('pdPrice').innerHTML = renderPriceHtml(price, sel.value ? null : p.compare_at_price);
 }
+// Recompose le nom de variante a partir des options choisies (meme
+// convention "Valeur1 / Valeur2" que le generateur cote tableau de bord)
+// pour retrouver son prix et son stock, et indique a l'acheteur si cette
+// combinaison precise est disponible.
+function resolveVariantSelection(productId) {
+  const p = PRODUCTS.find(x => x.id === productId);
+  let optionGroups = [];
+  try { optionGroups = p.options_json ? JSON.parse(p.options_json) : []; } catch(e) {}
+  const selected = optionGroups.map((g, gi) => document.getElementById('pdOpt'+gi).value);
+  const variant = p.variants.find(v => v.name === selected.join(' / '));
+  window.__pdResolvedVariant = variant || null;
+  const price = variant && variant.price != null ? Number(variant.price) : Number(p.price);
+  document.getElementById('pdPrice').innerHTML = renderPriceHtml(price, variant ? null : p.compare_at_price);
+  const availEl = document.getElementById('pdAvailability');
+  const addBtn = document.getElementById('pdAddBtn');
+  if (!variant) {
+    availEl.innerHTML = '<span style="color:var(--gray)">Cette combinaison n\'est pas disponible.</span>';
+    addBtn.disabled = true;
+  } else if (Number(variant.stock_qty) <= 0 && Number(p.track_inventory) && !Number(p.allow_backorder)) {
+    availEl.innerHTML = '<span style="color:#b91c1c">Rupture de stock pour cette combinaison.</span>';
+    addBtn.disabled = true;
+  } else if (Number(variant.stock_qty) <= 0 && Number(p.allow_backorder)) {
+    availEl.innerHTML = '<span style="color:var(--gray)">Disponible en précommande.</span>';
+    addBtn.disabled = false;
+  } else {
+    availEl.innerHTML = '';
+    addBtn.disabled = false;
+  }
+}
 function addToCart(productId) {
   const p = PRODUCTS.find(x => x.id === productId);
-  const variantSel = document.getElementById('pdVariant');
-  const variantId = variantSel ? variantSel.value : '';
-  const variant = variantId ? p.variants.find(v=>v.id===variantId) : null;
+  let variant = null, variantId = null;
+  const flatSel = document.getElementById('pdVariant');
+  if (flatSel) {
+    variantId = flatSel.value;
+    variant = variantId ? p.variants.find(v=>v.id===variantId) : null;
+  } else if (window.__pdResolvedVariant) {
+    variant = window.__pdResolvedVariant;
+    variantId = variant.id;
+  }
   const qty = window.__pdQty || 1;
   const key = productId+'|'+(variantId||'');
   const existing = CART.find(l => l.key === key);
@@ -212,10 +269,27 @@ function openCart() {
   renderCartSheet();
   document.getElementById('cartOverlay').classList.add('open');
 }
+// Reproduit exactement la regle appliquee cote serveur (shop_checkout) :
+// chaque produit physique peut definir son propre frais de livraison, sinon
+// celui de la boutique s'applique ; une commande n'est livree qu'une fois,
+// donc on retient le plus eleve plutot que de les additionner. Purement
+// pour l'affichage avant validation - le total facture reste toujours
+// recalcule cote serveur a la commande.
+function computeDeliveryFee() {
+  let fee = 0;
+  CART.forEach(l => {
+    const p = PRODUCTS.find(x => x.id === l.product_id);
+    if (!p || Number(p.is_physical) === 0) return;
+    const productFee = (p.delivery_fee !== null && p.delivery_fee !== undefined && p.delivery_fee !== '')
+      ? Number(p.delivery_fee) : Number(BOUTIQUE.default_delivery_fee || 0);
+    fee = Math.max(fee, productFee);
+  });
+  return fee;
+}
 function renderCartSheet(step) {
   step = step || 'cart';
   const subtotal = CART.reduce((s,l)=>s+l.price*l.qty, 0);
-  const deliveryFee = Number(BOUTIQUE.default_delivery_fee || 0);
+  const deliveryFee = computeDeliveryFee();
   const total = subtotal + deliveryFee;
   const totalsHtml = deliveryFee > 0
     ? `<div class="cart-line"><div>Sous-total</div><div>${fmtMoney(subtotal, BOUTIQUE.currency)}</div></div>
